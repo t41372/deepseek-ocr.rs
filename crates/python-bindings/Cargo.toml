@@ -1,0 +1,73 @@
+[package]
+name = "deepseek-ocr-python"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Python bindings for deepseek-ocr.rs"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/t41372/deepseek-ocr.rs"
+
+[lib]
+name = "deepseek_ocr"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Core dependencies
+deepseek-ocr-core = { workspace = true }
+deepseek-ocr-assets = { workspace = true }
+deepseek-ocr-config = { workspace = true }
+
+# Inference engines
+deepseek-ocr-infer-deepseek = { path = "../infer-deepseek" }
+deepseek-ocr-infer-paddleocr = { path = "../infer-paddleocr" }
+deepseek-ocr-infer-dots = { path = "../infer-dots" }
+
+# PyO3 for Python bindings
+pyo3 = { version = "0.23", features = ["extension-module", "anyhow"] }
+
+# Image processing
+image = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Tokenization
+tokenizers = { workspace = true }
+
+# Candle for ML
+candle-core = { workspace = true }
+candle-nn = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[features]
+default = []
+metal = [
+    "candle-core/metal",
+    "candle-nn/metal",
+]
+cuda = [
+    "candle-core/cuda",
+    "candle-nn/cuda",
+]
+accelerate = [
+    "candle-core/accelerate",
+    "candle-nn/accelerate",
+]
+mkl = [
+    "candle-core/mkl",
+    "candle-nn/mkl",
+]
+flash-attn = [
+    "candle-flash-attn",
+]
+
+[dependencies.candle-flash-attn]
+version = "0.9"
+optional = true
