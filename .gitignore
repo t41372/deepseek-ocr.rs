@@ -9,6 +9,7 @@ baselines/sample
 baselines/fixtures
 __pycache__
 .venv
+bindings/python/.venv
 .hf-cache
 *.bin
 *.dsq
