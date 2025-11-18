@@ -1,0 +1,47 @@
+name: python-binding
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "bindings/python/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/python-binding.yml"
+      - "README.md"
+  pull_request:
+    branches: [master]
+    paths:
+      - "bindings/python/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/python-binding.yml"
+      - "README.md"
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    defaults:
+      run:
+        working-directory: bindings/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Sync Python dependencies
+        run: uv sync --dev
+      - name: Build extension (mock engine)
+        run: uv run maturin develop --locked --features mock-engine
+      - name: Run pytest
+        run: uv run pytest
+      - name: Run mypy
+        run: uv run mypy src tests

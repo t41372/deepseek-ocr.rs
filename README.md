@@ -54,6 +54,24 @@ The original DeepSeek-OCR ships as a Python + Transformers stack—powerful, but
 - **Intel MKL (preview)** – faster BLAS on x86 via `--features mkl` (install Intel oneMKL beforehand).
 - **OpenAI client compatibility** – drop-in replacement for popular SDKs; the server automatically collapses chat history to the latest user turn for OCR-friendly prompts.
 
+## Python binding 🐍
+
+Need to call the Rust engines directly from Python?  The repository now ships a
+fully typed package under [`bindings/python`](bindings/python).  Build it with
+[uv](https://github.com/astral-sh/uv) and
+[maturin](https://github.com/PyO3/maturin):
+
+```bash
+cd bindings/python
+uv sync --dev
+uv run maturin develop --locked
+uv run pytest
+uv run mypy src tests
+```
+
+See [`bindings/python/README.md`](bindings/python/README.md) for usage examples,
+API docs, and maintenance notes.
+
 ## Model Matrix 📦
 
 The workspace exposes three base model IDs plus DSQ-quantized variants for DeepSeek‑OCR, PaddleOCR‑VL, and DotsOCR:
