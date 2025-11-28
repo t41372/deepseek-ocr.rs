@@ -206,13 +206,14 @@ impl EngineHandle {
             .as_ref()
             .map(|cb| cb.as_ref() as &dyn Fn(usize, &[i64]));
 
-        let model = self
-            .state
-            .model
-            .lock()
-            .map_err(|_| PyRuntimeError::new_err("engine poisoned by previous panic"))?;
-        let outcome = model
-            .decode(
+        let outcome: Result<DecodeOutcome> = py.allow_threads(|| {
+            let model = self
+                .state
+                .model
+                .lock()
+                .map_err(|_| anyhow!("engine poisoned by previous panic"))?;
+
+            model.decode(
                 &self.state.tokenizer,
                 prompt,
                 &decoded_images,
@@ -220,7 +221,9 @@ impl EngineHandle {
                 &decode_params,
                 stream_ref,
             )
-            .map_err(to_pyerr)?;
+        });
+
+        let outcome = outcome.map_err(to_pyerr)?;
         Ok(DecodeOutcomeHandle::from(outcome))
     }
 }
