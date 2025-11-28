@@ -2,7 +2,7 @@ name: python-binding
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - "bindings/python/**"
       - "crates/**"
@@ -11,7 +11,7 @@ on:
       - ".github/workflows/python-binding.yml"
       - "README.md"
   pull_request:
-    branches: [master]
+    branches: [main]
     paths:
       - "bindings/python/**"
       - "crates/**"
