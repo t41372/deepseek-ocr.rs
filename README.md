@@ -69,6 +69,12 @@ uv run pytest
 uv run mypy src tests
 ```
 
+The default build enables a lightweight mock engine so you can run the Python
+tests without downloading model weights; pass `--no-default-features` if you
+want to build only the real engines.
+
+To publish wheels, the Python package name is `deepseek-ocr-rs`.
+
 See [`bindings/python/README.md`](bindings/python/README.md) for usage examples,
 API docs, and maintenance notes.
 

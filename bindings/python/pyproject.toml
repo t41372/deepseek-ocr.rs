@@ -3,23 +3,20 @@ requires = ["maturin>=1.6"]
 build-backend = "maturin"
 
 [project]
-name = "deepseek-ocr"
+name = "deepseek-ocr-rs"
 version = "0.1.0"
-description = "Python bindings for the DeepSeek OCR toolkit"
+description = "Python bindings for TimmyOVO/deepseek-ocr.rs"
 readme = "README.md"
 license = { file = "../../LICENSE" }
 requires-python = ">=3.10"
-authors = [
-    { name = "DeepSeek", email = "opensource@deepseek.com" }
-]
 dependencies = [
     "pillow>=10.2",
     "typing-extensions>=4.10",
 ]
 
 [project.urls]
-Homepage = "https://github.com/deepseek-ai/deepseek-ocr.rs"
-Documentation = "https://github.com/deepseek-ai/deepseek-ocr.rs/tree/master/bindings/python"
+Homepage = "https://github.com/TimmyOVO/deepseek-ocr.rs"
+Documentation = "https://github.com/TimmyOVO/deepseek-ocr.rs/tree/master/bindings/python"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
@@ -27,12 +24,13 @@ manifest-path = "Cargo.toml"
 module-name = "deepseek_ocr._native"
 python-source = "src"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "maturin>=1.6",
     "pytest>=8.2",
     "pytest-cov>=5.0",
     "mypy>=1.10",
+    "ruff>=0.14.7",
 ]
 
 [tool.pytest.ini_options]

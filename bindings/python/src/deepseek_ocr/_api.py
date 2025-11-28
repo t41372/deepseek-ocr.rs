@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Literal, Optional, Sequence, Tuple, Union
+from typing import Literal
+import os
 
 from PIL import Image
 
 from . import _native
 
-ImageInput = Union[str, Path, bytes, bytearray, Image.Image]
+ImageInput = str | Path | bytes | bytearray | Image.Image
 ModelLiteral = Literal["deepseek", "paddle", "dots", "mock"]
 DeviceLiteral = Literal["cpu", "cuda", "metal"]
 DTypeLiteral = Literal["f32", "f16", "bf16"]
@@ -40,11 +42,11 @@ class GenerationConfig:
     max_new_tokens: int = 512
     do_sample: bool = False
     temperature: float = 0.0
-    top_p: Optional[float] = None
-    top_k: Optional[int] = None
+    top_p: float | None = None
+    top_k: int | None = None
     repetition_penalty: float = 1.0
-    no_repeat_ngram_size: Optional[int] = None
-    seed: Optional[int] = None
+    no_repeat_ngram_size: int | None = None
+    seed: int | None = None
     use_cache: bool = True
 
     def to_native(self) -> _native.DecodeParametersInput:
@@ -66,7 +68,7 @@ class DecodeResult:
     text: str
     prompt_tokens: int
     response_tokens: int
-    generated_tokens: Tuple[int, ...]
+    generated_tokens: tuple[int, ...]
 
 
 class OcrEngine:
@@ -87,13 +89,13 @@ class OcrEngine:
     def from_files(
         cls,
         *,
-        config_path: Optional[Union[str, Path]] = None,
-        tokenizer_path: Optional[Union[str, Path]] = None,
-        weights_path: Optional[Union[str, Path]] = None,
-        snapshot_path: Optional[Union[str, Path]] = None,
+        config_path: str | Path | None = None,
+        tokenizer_path: str | Path | None = None,
+        weights_path: str | Path | None = None,
+        snapshot_path: str | Path | None = None,
         model: ModelLiteral = "deepseek",
         device: DeviceLiteral = "cpu",
-        dtype: Optional[DTypeLiteral] = None,
+        dtype: DTypeLiteral | None = None,
         template: str = "plain",
         system_prompt: str = "",
     ) -> "OcrEngine":
@@ -113,9 +115,9 @@ class OcrEngine:
         *,
         prompt: str,
         images: Sequence[ImageInput],
-        generation: Optional[GenerationConfig] = None,
-        vision: Optional[VisionConfig] = None,
-        stream: Optional[StreamCallback] = None,
+        generation: GenerationConfig | None = None,
+        vision: VisionConfig | None = None,
+        stream: StreamCallback | None = None,
     ) -> DecodeResult:
         rendered_prompt = _native.render_prompt(
             self._template,
@@ -125,8 +127,8 @@ class OcrEngine:
         image_slots = rendered_prompt.count("<image>")
         if image_slots != len(images):
             raise ValueError(
-                "prompt contains %d <image> tokens but %d images were provided"
-                % (image_slots, len(images))
+                f"prompt contains {image_slots} <image> tokens "
+                f"but {len(images)} images were provided"
             )
         payloads = [_normalise_image(image) for image in images]
         vision_settings = (vision or VisionConfig()).to_native()
@@ -150,24 +152,33 @@ def _normalise_image(image: ImageInput) -> bytes:
     if isinstance(image, (bytes, bytearray)):
         return bytes(image)
     if isinstance(image, Image.Image):
-        buffer = _buffer_png(image)
-        return buffer
+        return _buffer_ppm(image)
     path = Path(image)
     data = path.expanduser().read_bytes()
     return data
 
 
-def _buffer_png(image: Image.Image) -> bytes:
-    with image.convert("RGB") as converted:
-        from io import BytesIO
+def _buffer_ppm(image: Image.Image) -> bytes:
+    """Encode a PIL image to bytes using fast PPM format.
 
-        buf = BytesIO()
-        converted.save(buf, format="PNG")
-        return buf.getvalue()
+    PPM is effectively raw RGB with a tiny header, so it avoids the heavy
+    compression/decompression cost of PNG while remaining compatible with the
+    Rust-side `image` crate (with the `pnm` feature). The trade-off is larger
+    payload size, which is acceptable for in-process transfer.
+    """
+
+    from io import BytesIO
+
+    converted = image.convert("RGB")
+
+    buf = BytesIO()
+    converted.save(buf, format="PPM")
+    data = buf.getvalue()
+    converted.close()
+    return data
 
 
-def _coerce_optional_path(value: Optional[Union[str, Path]]) -> Optional[str]:
+def _coerce_optional_path(value: str | Path | None) -> str | None:
     if value is None:
         return None
-    path = Path(value)
-    return str(path.expanduser())
+    return os.fsdecode(Path(value).expanduser())

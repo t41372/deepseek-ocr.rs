@@ -1,4 +1,5 @@
 use std::{
+    io,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
@@ -14,7 +15,9 @@ use deepseek_ocr_infer_dots::load_model as load_dots_model;
 use deepseek_ocr_infer_paddleocr::load_model as load_paddle_model;
 use image::DynamicImage;
 use pyo3::{
-    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
+    exceptions::{
+        PyFileNotFoundError, PyPermissionError, PyRuntimeError, PyTypeError, PyValueError,
+    },
     prelude::*,
     types::{PyAny, PyBytes, PyList, PySequence},
     Bound, PyErr, PyResult, Python,
@@ -190,23 +193,28 @@ impl EngineHandle {
         let decode_params: DecodeParameters = decode.into();
 
         let callback = stream.map(|callable| callable.into_py(py));
-        let stream_holder = callback.map(|py_obj| {
-            Box::new(move |count: usize, ids: &[i64]| {
-                Python::with_gil(|py| {
-                    let list = PyList::new_bound(py, ids);
-                    let result = py_obj.call1(py, (count, list));
-                    if let Err(err) = result {
-                        err.print(py);
-                    }
-                });
-            }) as Box<dyn Fn(usize, &[i64]) + Send + Sync>
-        });
+        // Keep the Python callback alive across `allow_threads` by storing it in an `Arc`.
+        // The extra Send + Sync bounds placate the thread-safety requirement of
+        // `allow_threads`, while the actual invocation re-acquires the GIL.
+        let stream_holder: Option<Arc<dyn Fn(usize, &[i64]) + Send + Sync>> = callback.map(
+            |py_obj| {
+                Arc::new(move |count: usize, ids: &[i64]| {
+                    Python::with_gil(|py| {
+                        let list = PyList::new_bound(py, ids);
+                        let result = py_obj.call1(py, (count, list));
+                        if let Err(err) = result {
+                            err.print(py);
+                        }
+                    });
+                }) as Arc<dyn Fn(usize, &[i64]) + Send + Sync>
+            },
+        );
 
-        let stream_ref = stream_holder
-            .as_ref()
-            .map(|cb| cb.as_ref() as &dyn Fn(usize, &[i64]));
+        let stream_ref: Option<&(dyn Fn(usize, &[i64]) + Send + Sync)> =
+            stream_holder.as_deref();
 
         let outcome: Result<DecodeOutcome> = py.allow_threads(|| {
+            let stream_cb = stream_ref.map(|cb| cb as &dyn Fn(usize, &[i64]));
             let model = self
                 .state
                 .model
@@ -219,7 +227,7 @@ impl EngineHandle {
                 &decoded_images,
                 vision_settings,
                 &decode_params,
-                stream_ref,
+                stream_cb,
             )
         });
 
@@ -229,7 +237,31 @@ impl EngineHandle {
 }
 
 fn to_pyerr(err: anyhow::Error) -> PyErr {
-    PyRuntimeError::new_err(err.to_string())
+    let msg = err.to_string();
+
+    for cause in err.chain() {
+        if let Some(io_err) = cause.downcast_ref::<io::Error>() {
+            return match io_err.kind() {
+                io::ErrorKind::NotFound => PyFileNotFoundError::new_err(msg.clone()),
+                io::ErrorKind::PermissionDenied => PyPermissionError::new_err(msg.clone()),
+                io::ErrorKind::InvalidInput | io::ErrorKind::UnexpectedEof => {
+                    PyValueError::new_err(msg.clone())
+                }
+                _ => PyRuntimeError::new_err(msg.clone()),
+            };
+        }
+    }
+
+    let lower = msg.to_lowercase();
+    if lower.contains("invalid")
+        || lower.contains("mismatch")
+        || lower.contains("expected")
+        || lower.contains("parse")
+    {
+        PyValueError::new_err(msg)
+    } else {
+        PyRuntimeError::new_err(msg)
+    }
 }
 
 #[derive(Clone, Copy)]

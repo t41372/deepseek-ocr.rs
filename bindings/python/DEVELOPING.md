@@ -6,7 +6,7 @@ what to do when engine-facing changes land.
 ## Architecture overview
 
 * `bindings/python/src/lib.rs` implements a small PyO3 crate that exposes
-  `deepseek_ocr._native`.
+  `deepseek_ocr._native` as part of the `deepseek-ocr-rs` package.
 * All inference happens inside the existing Rust engines.  The binding loads a
   model via the same `ModelLoadArgs` structure used by the CLI and wraps it in
   a thread-safe `EngineHandle`.
@@ -15,7 +15,9 @@ what to do when engine-facing changes land.
 
 ## Rebuilding after Rust changes
 
-1. Ensure the workspace compiles via `cargo test -p deepseek-ocr-py`.
+1. Ensure the workspace compiles via `cargo test -p deepseek-ocr-py`
+   (the default features include the mock engine so this runs without weights;
+   use `--no-default-features` to exercise only the real engines).
 2. Rebuild the extension: `uv run maturin develop --locked`.
 3. Run Python tests and the strict type checker:
    ```bash

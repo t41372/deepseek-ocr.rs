@@ -9,4 +9,3 @@ __all__ = [
     "normalize_text",
     "render_prompt",
 ]
-

@@ -1,7 +1,7 @@
 [package]
 name = "deepseek-ocr-py"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "Apache-2.0"
 description = "Python bindings for the DeepSeek OCR engines"
 
@@ -10,7 +10,7 @@ name = "deepseek_ocr_native"
 crate-type = ["cdylib"]
 
 [features]
-default = []
+default = ["mock-engine"]
 mock-engine = []
 
 [dependencies]
@@ -19,7 +19,7 @@ deepseek-ocr-core = { path = "../../crates/core" }
 deepseek-ocr-infer-deepseek = { path = "../../crates/infer-deepseek" }
 deepseek-ocr-infer-dots = { path = "../../crates/infer-dots" }
 deepseek-ocr-infer-paddleocr = { path = "../../crates/infer-paddleocr" }
-image = { workspace = true }
+image = { workspace = true, features = ["pnm"] }
 once_cell = "1.19"
 candle-core = { workspace = true }
 pyo3 = { version = "0.21", features = ["extension-module", "abi3-py310"] }
