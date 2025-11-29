@@ -31,16 +31,16 @@ class VisionConfig:
     Attributes:
         base_size: Maximum base dimension for image resizing. Images are resized
             proportionally to fit within this dimension while preserving aspect ratio.
-            Default is 1536.
+            Default is 1024 (matching Rust implementation).
         image_size: Target patch size for vision encoding. Resized images are further
-            processed into patches of this size. Default is 1024.
-        crop_mode: Whether to use center cropping. If True, crops the center region
-            after resizing; if False, uses padding. Default is False.
+            processed into patches of this size. Default is 640 (matching Rust implementation).
+        crop_mode: Whether to use dynamic crop mode. If True, enables dynamic cropping
+            for better quality; if False, uses padding mode. Default is True (matching Rust implementation).
     """
 
-    base_size: int = 1536
-    image_size: int = 1024
-    crop_mode: bool = False
+    base_size: int = 1024
+    image_size: int = 640
+    crop_mode: bool = True
 
     def to_native(self) -> _native.VisionSettingsInput:
         return _native.VisionSettingsInput(
@@ -72,7 +72,7 @@ class GenerationConfig:
         repetition_penalty: Penalty for token repetition. Values > 1.0 discourage repetition,
             values < 1.0 encourage it. Default is 1.0 (no penalty).
         no_repeat_ngram_size: If set, prevents n-grams of this size from appearing more
-            than once. Default is None.
+            than once. Default is 20 (matching Rust implementation).
         seed: Random seed for reproducible sampling when do_sample=True. Default is None.
         use_cache: Whether to use KV-cache for faster generation. Default is True.
     """
@@ -83,7 +83,7 @@ class GenerationConfig:
     top_p: float | None = None
     top_k: int | None = None
     repetition_penalty: float = 1.0
-    no_repeat_ngram_size: int | None = None
+    no_repeat_ngram_size: int | None = 20
     seed: int | None = None
     use_cache: bool = True
 
@@ -144,7 +144,8 @@ class OcrEngine:
 
         Args:
             handle: Native Rust engine handle.
-            template: Prompt template name (e.g., "plain", "deepseek").
+            template: Conversation template name. Options: "plain" (default), "deepseek",
+                "deepseekv2", "alignment". Controls how prompts are formatted for the model.
             system_prompt: System prompt text to prepend to all generations.
         """
         self._handle = handle
@@ -181,7 +182,8 @@ class OcrEngine:
             dtype: Data type for model weights. Options: "f32", "f16", "bf16".
                 If None, automatically selects the best dtype for the device
                 (f32 for CPU, f16 for Metal/CUDA).
-            template: Prompt template name (e.g., "plain", "deepseek"). Default is "plain".
+            template: Conversation template name. Options: "plain" (default), "deepseek",
+                "deepseekv2", "alignment". Controls how prompts are formatted for the model.
             system_prompt: Optional system prompt prepended to all user prompts. Default is "".
             cache_dir: Custom root cache directory. If None, uses platform default:
                 - macOS: ~/Library/Caches/deepseek-ocr
@@ -263,7 +265,8 @@ class OcrEngine:
             device: Target device. Options: "cpu", "cuda", "metal". Default is "cpu".
             dtype: Data type for model weights. Options: "f32", "f16", "bf16".
                 If None, automatically selects the best dtype for the device.
-            template: Prompt template name. Default is "plain".
+            template: Conversation template name. Options: "plain" (default), "deepseek",
+                "deepseekv2", "alignment". Controls how prompts are formatted for the model.
             system_prompt: Optional system prompt prepended to all user prompts. Default is "".
             auto_download: If True and model_id is provided, downloads missing assets automatically.
                 Default is False.

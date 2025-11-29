@@ -18,12 +18,11 @@ def main() -> None:
 
     # Load the DotsOCR model
     print("Loading DotsOCR model...")
-    print("⚠️  This model requires ~30-50GB RAM")
     engine = OcrEngine.from_pretrained(
-        model_id="dots-ocr",  # Complex layout specialist
+        model_id="dots-ocr-q4k",  # Complex layout specialist
         device="cpu",  # Options: "cpu", "metal" (macOS), "cuda" (Linux/Windows)
         dtype="f32",  # "f32" for CPU, "f16" for GPU
-        template="markdown",  # Markdown template for structured output
+        template="plain",  # Template: "plain", "deepseek", "deepseekv2", "alignment"
     )
     print("Model loaded!\n")
 

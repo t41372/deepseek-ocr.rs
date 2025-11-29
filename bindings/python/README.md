@@ -177,13 +177,11 @@ image = Image.open("bindings/python/tests/assets/sample.jpg")
 result = engine.generate(
     prompt="<image>\n<|grounding|>Convert this document to Markdown format, preserving structure and formatting.",
     images=[image],
-    # Control generation behavior
+    # Control generation behavior (using defaults for deterministic output)
     generation=GenerationConfig(
         max_new_tokens=512,      # Maximum length of output (increase for longer documents)
-        temperature=0.0,         # Use 0.0 for consistent results, >0 for creative variation
-        do_sample=False,         # Set True with temperature >0 for non-deterministic output
-        top_p=0.9,              # Nucleus sampling - only used when do_sample=True
-        top_k=50,               # Top-k sampling - only used when do_sample=True
+        temperature=0.0,         # 0.0 = deterministic, >0 for creative variation
+        do_sample=False,         # False = greedy decoding, True = sampling
     )
 )
 
@@ -211,11 +209,11 @@ result = engine.generate(
         max_new_tokens=512,
         temperature=0.0,        # Deterministic for accurate extraction
     ),
-    # Adjust vision settings for better OCR quality
+    # Optionally adjust vision settings (these are the defaults, shown for reference)
     vision=VisionConfig(
-        base_size=1536,         # Higher = more detail but slower (try 1024 for speed)
-        image_size=1024,        # Resize target - balance between quality and memory
-        crop_mode=False,        # Set True to crop instead of resize (preserves quality)
+        base_size=1024,         # Base resolution (increase to 1536 for more detail, slower)
+        image_size=640,         # Crop size (increase to 1024 for higher quality)
+        crop_mode=True,         # Dynamic crop mode (set False for padding mode)
     )
 )
 
@@ -227,7 +225,7 @@ print(result.text)
 ```python
 # gpu_ocr.py
 from PIL import Image
-from deepseek_ocr_rs import OcrEngine, GenerationConfig
+from deepseek_ocr_rs import OcrEngine
 
 # Use GPU for faster processing
 # Note: Requires building with --features metal (macOS) or cuda (Linux/Windows)
@@ -240,11 +238,10 @@ engine = OcrEngine.from_pretrained(
 # Open your image - replace with your document!
 image = Image.open("bindings/python/tests/assets/sample.jpg")
 
-# Process with GPU acceleration
+# Process with GPU acceleration (uses default generation settings for deterministic output)
 result = engine.generate(
     prompt="<image> Extract all text",
     images=[image],
-    generation=GenerationConfig(max_new_tokens=512, temperature=0.0)
 )
 
 print(result.text)
@@ -281,14 +278,48 @@ def on_token_generated(count: int, token_ids: tuple[int, ...]) -> None:
 result = engine.generate(
     prompt="<image> Convert to Markdown",
     images=[image],
-    generation=GenerationConfig(max_new_tokens=512, temperature=0.0),
+    generation=GenerationConfig(
+        max_new_tokens=512,
+        temperature=0.0,
+    ),
     stream=on_token_generated  # Pass callback function to get real-time updates
 )
 
 print(f"\n\nFinal output ({token_count} tokens):\n{result.text}")
 ```
 
-### Example 5: Choosing Different Models
+### Example 5: Stochastic Sampling (Creative/Variable Output)
+
+```python
+# stochastic_sampling.py
+from PIL import Image
+from deepseek_ocr_rs import OcrEngine, GenerationConfig
+
+# Load model
+engine = OcrEngine.from_pretrained(model_id="deepseek-ocr")
+
+# Open your image
+image = Image.open("bindings/python/tests/assets/sample.jpg")
+
+# Generate with stochastic sampling for creative/variable output
+result = engine.generate(
+    prompt="<image> Describe this image creatively",
+    images=[image],
+    generation=GenerationConfig(
+        max_new_tokens=512,
+        do_sample=True,          # Enable stochastic sampling
+        temperature=0.7,         # Controls randomness (0.1=focused, 1.0=creative)
+        top_p=0.9,              # Nucleus sampling: consider top 90% probability mass
+        top_k=50,               # Top-k sampling: consider only top 50 tokens
+        repetition_penalty=1.1,  # Penalize repetition (>1.0 = less repetition)
+        seed=42,                # Set seed for reproducible stochastic generation
+    )
+)
+
+print(result.text)
+```
+
+### Example 6: Choosing Different Models
 
 ```python
 # model_comparison.py
@@ -315,7 +346,8 @@ print("PaddleOCR-VL:", result2.text[:100], "...")
 # print("DotsOCR:", result3.text[:100], "...")
 ```
 
-### Example 6: Advanced - Custom Model Paths (Air-Gapped Environments)
+### Example 7: Advanced - Custom Model Paths (Air-Gapped Environments)
+
 
 ```python
 # custom_paths.py
@@ -335,7 +367,7 @@ engine = OcrEngine.from_files(
     weights_path="/custom/path/model.safetensors", # Path to model weights
     device="cpu",                                # Device: "cpu", "cuda", "metal"
     dtype="f32",                                 # Data type: "f32", "f16", "bf16"
-    template="plain",                            # Template: "plain", "markdown", etc.
+    template="plain",                            # Template: "plain", "deepseek", "deepseekv2", "alignment"
 )
 
 # Use the engine normally
@@ -431,13 +463,11 @@ DEEPSEEK_OCR_E2E=1 DEEPSEEK_OCR_E2E_MODEL_HOME=$(uv run python -m deepseek_ocr_r
 
 ## 🤝 Contributing
 
-Contributions are welcome! This project follows these standards:
+Contributions are welcome! The python binding follows these standards:
 
-- ✅ 100% test coverage
 - ✅ Type checked with mypy (strict mode)
 - ✅ Linted with ruff
 - ✅ Python 3.10+ best practices
-- ✅ Conventional commits for git history
 
 ## 📝 License
 

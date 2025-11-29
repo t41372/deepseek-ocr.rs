@@ -188,10 +188,11 @@ def download_model(model_id: str, cache_dir: str | None = ...) -> DownloadResult
     ...
 
 def render_prompt(template: str, system_prompt: str, raw_prompt: str) -> str:
-    """Render a prompt using a template.
+    """Render a prompt using a conversation template.
 
     Args:
-        template: Template name (e.g., "plain", "deepseek").
+        template: Conversation template name. Options: "plain", "deepseek",
+            "deepseekv2", "alignment".
         system_prompt: System prompt text.
         raw_prompt: User prompt text.
 

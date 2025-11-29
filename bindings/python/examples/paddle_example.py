@@ -19,7 +19,7 @@ def main() -> None:
     # Load the PaddleOCR-VL model
     print("Loading PaddleOCR-VL model...")
     engine = OcrEngine.from_pretrained(
-        model_id="paddleocr-vl",  # Lighter, faster model
+        model_id="paddleocr-vl-q6k",  # blends of accuracy and footprint.
         device="cpu",  # Options: "cpu", "metal" (macOS), "cuda" (Linux/Windows)
         dtype="f32",  # "f32" for CPU, "f16" for GPU
     )

@@ -116,6 +116,34 @@ result = engine.generate(
 )
 ```
 
+### Conversation Templates
+
+The `template` parameter controls how prompts are formatted before being sent to the model. Available options:
+
+- **`"plain"`** (default) - No special formatting, prompt is passed directly to the model
+- **`"deepseek"`** - DeepSeek conversation format with `<|User|>:` and `<|Assistant|>:` roles
+- **`"deepseekv2"`** - DeepSeek V2 specific format
+- **`"alignment"`** - Specialized format for alignment tasks
+
+**For most OCR use cases, use the default `"plain"` template.** Other templates are primarily for specific model training formats.
+
+```python
+# Default - recommended for OCR
+engine = OcrEngine.from_pretrained(model_id="deepseek-ocr", template="plain")
+
+# DeepSeek conversation format (if needed for specific use cases)
+engine = OcrEngine.from_pretrained(model_id="deepseek-ocr", template="deepseek")
+```
+
+**Note:** The `template` parameter controls conversation format, not output format. To get markdown or other formatted output, specify it in your prompt:
+
+```python
+result = engine.generate(
+    prompt="<image> Convert this document to Markdown format",
+    images=[image]
+)
+```
+
 ### Streaming
 
 Pass a callback function to receive tokens as they're generated:

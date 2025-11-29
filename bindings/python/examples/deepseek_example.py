@@ -21,10 +21,10 @@ def main() -> None:
     # Load the DeepSeek-OCR model
     print("Loading DeepSeek-OCR model...")
     engine = OcrEngine.from_pretrained(
-        model_id="deepseek-ocr",  # Highest accuracy model
+        model_id="deepseek-ocr-q6k",  # Day‑to‑day balance for mid‑range GPUs
         device="cpu",  # Options: "cpu", "metal" (macOS), "cuda" (Linux/Windows)
         dtype="f32",  # "f32" for CPU, "f16" for GPU
-        template="plain",  # Template: "plain", "markdown", etc.
+        template="plain",  # Template: "plain", "deepseek", "deepseekv2", "alignment"
     )
     print("Model loaded!\n")
 
