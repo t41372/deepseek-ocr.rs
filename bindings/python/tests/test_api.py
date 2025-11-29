@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from deepseek_ocr import GenerationConfig, OcrEngine, VisionConfig, render_prompt
+from deepseek_ocr_rs import GenerationConfig, OcrEngine, VisionConfig, render_prompt
 
 
 def _sample_image() -> Image.Image:
@@ -222,7 +222,7 @@ def test_generation_and_vision_config_passthrough() -> None:
 def test_coerce_optional_path_handles_home_expansion(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from deepseek_ocr import _api
+    from deepseek_ocr_rs import _api
 
     sample = tmp_path / "artifact.bin"
     sample.write_bytes(b"ok")
@@ -238,7 +238,7 @@ def test_auto_download_invokes_helper(
 ) -> None:
     """Ensure auto_download wires through when files are missing."""
 
-    from deepseek_ocr import _api
+    from deepseek_ocr_rs import _api
 
     calls: list[str] = []
 
@@ -258,7 +258,7 @@ def test_auto_download_invokes_helper(
         return DummyResult
 
     missing = tmp_path / "missing.json"
-    monkeypatch.setattr("deepseek_ocr._api.download_model", fake_download)
+    monkeypatch.setattr("deepseek_ocr_rs._api.download_model", fake_download)
 
     result = _api._ensure_assets(
         model_id="deepseek",
@@ -277,7 +277,7 @@ def test_auto_download_invokes_helper(
 def test_auto_download_skips_when_present(tmp_path: Path) -> None:
     """If all paths exist, download helper should not be called."""
 
-    from deepseek_ocr import _api
+    from deepseek_ocr_rs import _api
 
     cfg = tmp_path / "c.json"
     tok = tmp_path / "t.json"
@@ -315,8 +315,10 @@ def test_from_files_auto_download_calls_ensure(
         def decode(self, *a: Any, **k: Any) -> None:  # pragma: no cover - not used here
             raise RuntimeError("should not decode in this test")
 
-    monkeypatch.setattr("deepseek_ocr._api._ensure_assets", fake_ensure)
-    monkeypatch.setattr("deepseek_ocr._native.create_engine", lambda **k: DummyHandle())
+    monkeypatch.setattr("deepseek_ocr_rs._api._ensure_assets", fake_ensure)
+    monkeypatch.setattr(
+        "deepseek_ocr_rs._native.create_engine", lambda **k: DummyHandle()
+    )
 
     engine = OcrEngine.from_files(engine="mock", model_id="mock-id", auto_download=True)
     assert isinstance(engine, OcrEngine)
@@ -332,10 +334,10 @@ def test_from_pretrained_downloads(
     w = tmp_path / "w.bin"
 
     monkeypatch.setattr(
-        "deepseek_ocr._api._ensure_assets",
+        "deepseek_ocr_rs._api._ensure_assets",
         lambda **kwargs: (str(cfg), str(tok), str(w), None),
     )
-    monkeypatch.setattr("deepseek_ocr._native.create_engine", lambda **k: object())
+    monkeypatch.setattr("deepseek_ocr_rs._native.create_engine", lambda **k: object())
 
     OcrEngine.from_pretrained(model_id="deepseek-ocr")
 
@@ -343,7 +345,7 @@ def test_from_pretrained_downloads(
 def test_download_cli_prints_paths(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    """Smoke test the python -m deepseek_ocr.download CLI wrapper."""
+    """Smoke test the python -m deepseek_ocr_rs.download CLI wrapper."""
 
     class Dummy:
         model_id = "deepseek-ocr"
@@ -355,9 +357,11 @@ def test_download_cli_prints_paths(
         snapshot_path = str(tmp_path / "snap.dsq")
         preprocessor_path = str(tmp_path / "pre.json")
 
-    monkeypatch.setattr("deepseek_ocr.download.download_model", lambda *a, **k: Dummy)
+    monkeypatch.setattr(
+        "deepseek_ocr_rs.download.download_model", lambda *a, **k: Dummy
+    )
 
-    from deepseek_ocr import download as dl
+    from deepseek_ocr_rs import download as dl
 
     dl.main(["--model", "deepseek-ocr", "--print-cache"])
     out = capsys.readouterr().out
@@ -379,9 +383,11 @@ def test_download_cli_full(
         snapshot_path = str(tmp_path / "snap.dsq")
         preprocessor_path = str(tmp_path / "pre.json")
 
-    monkeypatch.setattr("deepseek_ocr.download.download_model", lambda *a, **k: Dummy)
+    monkeypatch.setattr(
+        "deepseek_ocr_rs.download.download_model", lambda *a, **k: Dummy
+    )
 
-    from deepseek_ocr import download as dl
+    from deepseek_ocr_rs import download as dl
 
     dl.main(["--model", "deepseek-ocr"])
     out = capsys.readouterr().out
@@ -403,10 +409,10 @@ def test_download_model_wrapper(monkeypatch: pytest.MonkeyPatch) -> None:
         called["cache_dir"] = cache_dir
         return Dummy()
 
-    import deepseek_ocr._native as native
+    import deepseek_ocr_rs._native as native
 
     monkeypatch.setattr(native, "download_model", fake_native, raising=False)
-    from deepseek_ocr._api import download_model
+    from deepseek_ocr_rs._api import download_model
 
     result = download_model("deepseek-ocr", cache_dir="/tmp/cache")
     assert isinstance(result, Dummy)
@@ -418,10 +424,10 @@ def test_ensure_assets_marks_snapshot(
 ) -> None:
     """Quantized model should request snapshot when missing."""
 
-    from deepseek_ocr import _api
+    from deepseek_ocr_rs import _api
 
     monkeypatch.setattr(
-        "deepseek_ocr._api.download_model",
+        "deepseek_ocr_rs._api.download_model",
         lambda *a, **k: type(
             "R",
             (),

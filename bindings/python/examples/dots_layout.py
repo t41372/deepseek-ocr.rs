@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from deepseek_ocr import GenerationConfig, OcrEngine, VisionConfig
+from deepseek_ocr_rs import GenerationConfig, OcrEngine, VisionConfig
 
 
 def _load_images(paths: Sequence[str | Path]) -> list[Image.Image]:

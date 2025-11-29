@@ -5,13 +5,13 @@ import warnings
 
 import pytest
 from pathlib import Path
-from deepseek_ocr import (
+from deepseek_ocr_rs import (
     OcrEngine,
     GenerationConfig,
     VisionConfig,
     get_default_cache_dir,
 )
-from deepseek_ocr._api import _engine_from_model_id, _resolve_device
+from deepseek_ocr_rs._api import _engine_from_model_id, _resolve_device
 
 
 def test_engine_from_model_id() -> None:
@@ -81,11 +81,15 @@ def test_create_engine_validation() -> None:
 
 def test_auto_download_requires_model_id() -> None:
     """auto_download=True requires model_id parameter."""
-    with pytest.raises(ValueError, match="model_id is required when auto_download=True"):
+    with pytest.raises(
+        ValueError, match="model_id is required when auto_download=True"
+    ):
         OcrEngine.from_files(auto_download=True)
 
 
-def test_engine_from_model_id_with_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_engine_from_model_id_with_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test environment variable override for unknown model IDs."""
     # Set env var for custom model
     monkeypatch.setenv("DEEPSEEK_OCR_ENGINE_CUSTOM_MODEL", "paddle")
@@ -123,7 +127,7 @@ def test_error_message_for_missing_paths() -> None:
 
 def test_device_dtype_compatibility_warnings() -> None:
     """Test that incompatible device/dtype combinations emit warnings."""
-    from deepseek_ocr._api import _validate_device_dtype
+    from deepseek_ocr_rs._api import _validate_device_dtype
 
     # CPU + f16 should warn
     with pytest.warns(UserWarning, match=r"f16 dtype on CPU.*poor performance"):

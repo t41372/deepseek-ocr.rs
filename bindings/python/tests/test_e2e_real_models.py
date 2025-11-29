@@ -8,7 +8,7 @@ from typing import Literal, cast
 import pytest
 from PIL import Image
 
-from deepseek_ocr import GenerationConfig, OcrEngine, VisionConfig
+from deepseek_ocr_rs import GenerationConfig, OcrEngine, VisionConfig
 
 E2E_ENABLED = os.environ.get("DEEPSEEK_OCR_E2E") == "1"
 pytestmark = [
