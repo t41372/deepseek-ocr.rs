@@ -13,7 +13,7 @@ All three real engines share the **same Python API**:
 You can load them in two ways:
 
 ```python
-from deepseek_ocr import OcrEngine
+from deepseek_ocr_rs import OcrEngine
 
 # 1) Auto-download into the standard cache (recommended for most users).
 # This works for ALL supported models.
@@ -33,7 +33,7 @@ Feel free to swap `model_id=` between `"deepseek-ocr"`, `"paddleocr-vl"`, and `"
 ```python
 import os
 from PIL import Image
-from deepseek_ocr import GenerationConfig, OcrEngine, VisionConfig
+from deepseek_ocr_rs import GenerationConfig, OcrEngine, VisionConfig
 
 image = Image.open("receipt.png")
 
@@ -66,7 +66,7 @@ print(f"streamed {len(tokens)} tokens")
 ```python
 import os
 from PIL import Image
-from deepseek_ocr import GenerationConfig, OcrEngine, VisionConfig
+from deepseek_ocr_rs import GenerationConfig, OcrEngine, VisionConfig
 
 image = Image.open("form.png")
 
@@ -87,7 +87,7 @@ print(result.text)
 ```python
 import os
 from PIL import Image
-from deepseek_ocr import GenerationConfig, OcrEngine, VisionConfig
+from deepseek_ocr_rs import GenerationConfig, OcrEngine, VisionConfig
 
 images = [Image.open("page1.png"), Image.open("page2.png")]
 
@@ -111,7 +111,7 @@ print(result.text)
 ```python
 from concurrent.futures import ThreadPoolExecutor
 from PIL import Image
-from deepseek_ocr import OcrEngine
+from deepseek_ocr_rs import OcrEngine
 
 engine = OcrEngine.from_pretrained(model_id="deepseek-ocr")
 
@@ -133,10 +133,10 @@ for idx, text in enumerate(outputs, 1):
 If you need to load models from a custom location (e.g. air-gapped environment) without auto-download logic:
 
 ```python
-from deepseek_ocr import OcrEngine
+from deepseek_ocr_rs import OcrEngine
 
 # You can use the helper to get the default cache path if you just want to inspect it
-from deepseek_ocr import get_default_cache_dir
+from deepseek_ocr_rs import get_default_cache_dir
 print(f"Default cache for deepseek: {get_default_cache_dir('deepseek-ocr')}")
 
 # Or specify paths manually

@@ -6,11 +6,11 @@ what to do when engine-facing changes land.
 ## Architecture overview
 
 * `bindings/python/src/lib.rs` implements a small PyO3 crate that exposes
-  `deepseek_ocr._native` as part of the `deepseek-ocr-rs` package.
+  `deepseek_ocr_rs._native` as part of the `deepseek-ocr-rs` package.
 * All inference happens inside the existing Rust engines.  The binding loads a
   model via the same `ModelLoadArgs` structure used by the CLI and wraps it in
   a thread-safe `EngineHandle`.
-* The Python package (`src/deepseek_ocr`) only performs light validation and
+* The Python package (`src/deepseek_ocr_rs`) only performs light validation and
   marshals user input (images, prompts, config objects) into the native layer.
 
 ## Rebuilding after Rust changes
@@ -41,11 +41,11 @@ surface the changes immediately.
 
 ## Testing expectations
 
-* Keep `deepseek_ocr` at 100% coverage (run `uv run pytest --cov=deepseek_ocr`).
+* Keep `deepseek_ocr_rs` at 100% coverage (run `uv run pytest --cov=deepseek_ocr_rs`).
 * End-to-end runs with real weights are opt-in: set `DEEPSEEK_OCR_E2E=1` and
   `DEEPSEEK_OCR_E2E_MODEL_HOME=/path/to/cache` before running
   `uv run pytest -m e2e`. These tests intentionally stay out of CI.
-* Model assets can be pulled via `uv run python -m deepseek_ocr.download --model <id>`.
+* Model assets can be pulled via `uv run python -m deepseek_ocr_rs.download --model <id>`.
   The same function backs the `auto_download=True` flag in `OcrEngine.from_files`.
 
 ## When the tokenizer format changes
@@ -57,7 +57,7 @@ parameters and error messages mirror whatever the Rust CLI requires.
 ## Publishing
 
 1. Build wheels: `uv run maturin build --release`.
-2. Verify the resulting wheels via `uv pip install dist/deepseek_ocr-*.whl` and
+2. Verify the resulting wheels via `uv pip install dist/deepseek_ocr_rs-*.whl` and
    re-run the test suite against the installed package.
 3. Upload to PyPI or your internal index once the GitHub Actions workflow
    finishes successfully.

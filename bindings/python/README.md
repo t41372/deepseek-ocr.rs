@@ -17,7 +17,16 @@ uv run maturin develop --locked --no-default-features
 uv run maturin build --release
 
 # Download model assets (paths match Rust CLI caches)
-uv run python -m deepseek_ocr.download --model deepseek-ocr
+uv run python -m deepseek_ocr_rs.download --model deepseek-ocr
+
+### GPU-enabled builds
+
+Enable Candle features to match your platform when building wheels or editable installs:
+
+- Apple Metal / Accelerate (macOS): `uv run maturin develop --locked --no-default-features --features deepseek-ocr-infer-deepseek/metal,deepseek-ocr-infer-paddleocr/metal`
+- CUDA 12.x (Linux/Windows): `uv run maturin develop --locked --no-default-features --features deepseek-ocr-infer-deepseek/cuda,deepseek-ocr-infer-paddleocr/cuda`
+
+If you ship CPU-only wheels, document that GPU users must rebuild from source with the flags above.
 ```
 
 ## Get model assets
@@ -47,7 +56,7 @@ Set `HF_TOKEN` if you need access to private mirrors.
 
 ```python
 from PIL import Image
-from deepseek_ocr import OcrEngine
+from deepseek_ocr_rs import OcrEngine
 
 engine = OcrEngine.from_files(engine="mock")
 result = engine.generate(prompt="<image> hi", images=[Image.new("RGB", (8, 8))])
@@ -57,7 +66,7 @@ print(result.text)
 ## Quick start (real model, auto-download)
 
 ```python
-from deepseek_ocr import OcrEngine
+from deepseek_ocr_rs import OcrEngine
 from PIL import Image
 
 # Downloads missing assets into the same cache used by the Rust CLI/server.
@@ -74,7 +83,7 @@ print(engine.generate(prompt="<image> Hello", images=[img]).text)
 import os
 from pathlib import Path
 from PIL import Image
-from deepseek_ocr import GenerationConfig, OcrEngine, VisionConfig, get_default_cache_dir
+from deepseek_ocr_rs import GenerationConfig, OcrEngine, VisionConfig, get_default_cache_dir
 
 # You can inspect where assets are stored:
 print(f"Cache: {get_default_cache_dir('deepseek-ocr')}")
@@ -107,8 +116,9 @@ Tips:
 
 - Templates: `render_prompt(template, system_prompt, raw_prompt)` mirrors the CLI.
 - Streaming: pass `stream=callable` and receive incremental token IDs.
-- Concurrency: the binding releases the GIL during decode; you can share a single
-  `OcrEngine` across threads.
+- Concurrency: the binding releases the GIL during decode; a single `OcrEngine`
+  is mutex-protected so decode calls are serialized. Create multiple engines for
+  parallel inferences.
 
 Example streaming callback:
 
@@ -139,10 +149,20 @@ Run any script with `uv run python examples/<script>.py --help` for flags.
 
 ## Tests
 
-- Fast path (mock only): `uv run pytest --cov=deepseek_ocr --cov-report=term-missing`
+- Fast path (mock only): `uv run pytest --cov=deepseek_ocr_rs --cov-report=term-missing`
 - Opt-in end-to-end (real weights): set `DEEPSEEK_OCR_E2E=1` and point
   `DEEPSEEK_OCR_E2E_MODEL_HOME` at a cache directory, then run:
   ```
-  uv run python -m deepseek_ocr.download --model deepseek-ocr
-  DEEPSEEK_OCR_E2E=1 DEEPSEEK_OCR_E2E_MODEL_HOME=$(uv run python -m deepseek_ocr.download --model deepseek-ocr --print-cache) uv run pytest -m e2e
+  uv run python -m deepseek_ocr_rs.download --model deepseek-ocr
+  DEEPSEEK_OCR_E2E=1 DEEPSEEK_OCR_E2E_MODEL_HOME=$(uv run python -m deepseek_ocr_rs.download --model deepseek-ocr --print-cache) uv run pytest -m e2e
   ```
+
+## Forward compatibility and single source of truth
+
+- The binding defers model metadata to the Rust asset registry (`deepseek_ocr_assets`)
+  via `_native.engine_for_model` and `download_model`, avoiding duplicated model tables.
+- Environment overrides (`DEEPSEEK_OCR_ENGINE_<MODEL_ID>`) still work for brand new
+  models that the binding does not yet know about.
+- Quantized snapshots are detected via the Rust registry; no magic suffix matching in
+  Python. If you add a model in Rust, updating the assets list keeps the Python binding
+  aligned automatically.

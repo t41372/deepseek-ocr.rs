@@ -12,7 +12,7 @@ uv run maturin develop --locked --features mock-engine
 # Real engines (provide weights)
 uv run maturin develop --locked --no-default-features
 # Download assets (same cache as Rust CLI/server)
-uv run python -m deepseek_ocr.download --model deepseek-ocr
+uv run python -m deepseek_ocr_rs.download --model deepseek-ocr
 ```
 
 Artifacts required by each model:
@@ -45,7 +45,7 @@ Default cache roots after the CLI downloads:
 | `VisionConfig` | Mirrors `VisionSettings` (base size, crop mode, resize). |
 | `render_prompt` | Apply the template + system prompt just like the CLI/server. |
 | `normalize_text` | Strip trailing markers the engines emit. |
-| `download_model` / `python -m deepseek_ocr.download` | Fetch model assets and print resolved cache paths. |
+| `download_model` / `python -m deepseek_ocr_rs.download` | Fetch model assets and print resolved cache paths. |
 
 All heavy work happens in Rust; the GIL is released during decode.
 
@@ -78,6 +78,12 @@ All heavy work happens in Rust; the GIL is released during decode.
 - Quantized snapshots still require a baseline `config.json` and `tokenizer.json`
   plus the `.dsq` file; set `weights_path` to the snapshot and leave
   `snapshot_path` unset.
+- GPU builds: enable the matching Candle features when building wheels/editable
+  installs so `device="cuda"/"metal"` actually works:
+  - macOS Metal/Accelerate: `--features deepseek-ocr-infer-deepseek/metal,deepseek-ocr-infer-paddleocr/metal`
+  - CUDA 12.x: `--features deepseek-ocr-infer-deepseek/cuda,deepseek-ocr-infer-paddleocr/cuda`
+  CPU-only wheels accept the device strings but will fail at runtime; document the
+  need to rebuild with GPU features for those users.
 
 ## Model quick picks
 
@@ -89,74 +95,29 @@ All heavy work happens in Rust; the GIL is released during decode.
 ## Testing matrix
 
 - Unit + type checks (mock engine):  
-  `uv run pytest --cov=deepseek_ocr --cov-report=term-missing && uv run mypy src tests`
+  `uv run pytest --cov=deepseek_ocr_rs --cov-report=term-missing && uv run mypy src tests`
 - End-to-end with real weights (opt-in):  
   ```
-  uv run python -m deepseek_ocr.download --model deepseek-ocr
-  DEEPSEEK_OCR_E2E=1 DEEPSEEK_OCR_E2E_MODEL_HOME=$(uv run python -m deepseek_ocr.download --model deepseek-ocr --print-cache) uv run pytest -m e2e
+  uv run python -m deepseek_ocr_rs.download --model deepseek-ocr
+  DEEPSEEK_OCR_E2E=1 DEEPSEEK_OCR_E2E_MODEL_HOME=$(uv run python -m deepseek_ocr_rs.download --model deepseek-ocr --print-cache) uv run pytest -m e2e
   ```
 
 ## Forward compatibility with new Rust models
 
-When the Rust version adds a new model (e.g., `foo-ocr`) that the Python binding hasn't been updated for yet, users have two options:
+Single source of truth: model ids, engine kinds, and required files come from the
+Rust asset registry (`deepseek_ocr_assets`) via `_native.engine_for_model` and
+`download_model`. Python no longer hard-codes suffixes or file names.
 
-### Option 1: Environment variable override (Recommended)
+If a new Rust release adds a model the current Python package doesn't recognize:
 
-Set an environment variable to specify which engine type to use:
+1. Set `DEEPSEEK_OCR_ENGINE_<MODEL_ID>` to `deepseek` / `paddle` / `dots` to force an engine.
+2. If no override is set and the model isn't in the registry, the binding falls back to a
+   simple heuristic (`paddle` → `paddle`, `dots` → `dots`, else `deepseek`).
+3. Asset downloads always run through the Rust registry. Unknown ids will error early,
+   prompting you to update the asset list in Rust.
 
-```bash
-export DEEPSEEK_OCR_ENGINE_FOO_OCR=deepseek  # or paddle/dots
-python your_script.py
-```
-
-The binding will automatically use the specified engine for `foo-ocr`.
-
-### Option 2: Explicit `engine` parameter
-
-Manually download the model and use `from_files()` with an explicit engine:
-
-```python
-from deepseek_ocr import OcrEngine
-
-# Download manually using Rust CLI or download helper
-engine = OcrEngine.from_files(
-    model_id="foo-ocr",
-    engine="deepseek",  # Specify compatible engine type
-    config_path="/path/to/config.json",
-    tokenizer_path="/path/to/tokenizer.json",
-    weights_path="/path/to/weights.safetensors",
-    device="cpu",
-)
-```
-
-### Default behavior
-
-If no override is specified, the binding will:
-1. Check for `paddle` or `dots` in the model ID (case-insensitive)
-2. Fall back to `deepseek` engine (most compatible)
-
-This ensures new Rust models work immediately, even before Python binding updates.
-
-### Download helper scope
-
-The `download_model()` helper only knows about models registered in this binding
-(`deepseek-ocr`, `paddleocr-vl`, `dots-ocr`, and their quantized variants). If a
-new Rust release ships an additional model before the Python binding is updated:
-
-1. Download it with the Rust CLI (`deepseek-ocr download --model <id>`) or via
-   any other tool.
-2. Load it in Python with explicit paths:
-   ```python
-   from deepseek_ocr import OcrEngine
-   engine = OcrEngine.from_files(
-       engine="deepseek",  # or "paddle"/"dots" based on the model architecture
-       config_path="~/.cache/deepseek-ocr/models/<id>/config.json",
-       tokenizer_path="~/.cache/deepseek-ocr/models/<id>/tokenizer.json",
-       weights_path="~/.cache/deepseek-ocr/models/<id>/model.safetensors",
-   )
-   ```
-3. Optionally set `DEEPSEEK_OCR_ENGINE_<ID>=deepseek|paddle|dots` so
-   `from_pretrained()` works once the assets are present.
+Manual path loading remains supported via `from_files`; for quantized variants, omit
+`snapshot_path` and let `download_model` place the `.dsq` beside the baseline assets.
 
 ## Maintenance checklist
 
