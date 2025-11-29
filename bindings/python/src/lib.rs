@@ -29,7 +29,7 @@ use pyo3::{
 };
 use tokenizers::Tokenizer;
 
-#[pyclass(module = "deepseek_ocr._native")]
+#[pyclass(module = "deepseek_ocr_rs._native")]
 pub struct VisionSettingsInput {
     pub base_size: u32,
     pub image_size: u32,
@@ -59,7 +59,7 @@ impl From<&VisionSettingsInput> for VisionSettings {
     }
 }
 
-#[pyclass(module = "deepseek_ocr._native")]
+#[pyclass(module = "deepseek_ocr_rs._native")]
 pub struct DecodeParametersInput {
     pub max_new_tokens: usize,
     pub do_sample: bool,
@@ -128,7 +128,7 @@ impl From<&DecodeParametersInput> for DecodeParameters {
     }
 }
 
-#[pyclass(module = "deepseek_ocr._native")]
+#[pyclass(module = "deepseek_ocr_rs._native")]
 pub struct DecodeOutcomeHandle {
     #[pyo3(get)]
     pub text: String,
@@ -165,7 +165,7 @@ impl EngineState {
     }
 }
 
-#[pyclass(module = "deepseek_ocr._native")]
+#[pyclass(module = "deepseek_ocr_rs._native")]
 pub struct EngineHandle {
     state: Arc<EngineState>,
 }
@@ -325,6 +325,14 @@ fn parse_dtype(value: Option<&str>, device: &Device) -> PyResult<DType> {
     }
 }
 
+fn model_kind_to_label(kind: ModelKind) -> &'static str {
+    match kind {
+        ModelKind::Deepseek => "deepseek",
+        ModelKind::PaddleOcrVl => "paddle",
+        ModelKind::DotsOcr => "dots",
+    }
+}
+
 fn model_from_args(args: ModelArguments) -> Result<(Tokenizer, Box<dyn OcrEngine>)> {
     match args.kind {
         EngineKind::Deepseek => load_from_loader(args, ModelKind::Deepseek, load_deepseek_model),
@@ -442,6 +450,30 @@ fn create_engine(
     })
 }
 
+/// Return the engine label (deepseek|paddle|dots) for a given model id if it is
+/// registered in the Rust asset catalog. Unknown ids return `None` so the
+/// Python layer can fall back to heuristics or user overrides.
+#[pyfunction]
+fn engine_for_model(model_id: &str) -> PyResult<Option<String>> {
+    let baseline = assets::baseline_model_id(model_id);
+    let engine = assets::MODEL_ASSETS
+        .iter()
+        .find(|asset| asset.id == baseline)
+        .map(|asset| model_kind_to_label(asset.kind).to_string());
+    Ok(engine)
+}
+
+/// Whether the given model id represents a quantized snapshot that requires a
+/// `.dsq` file. Used by the Python binding to decide when to insist on
+/// snapshot assets.
+#[pyfunction]
+fn model_requires_snapshot(model_id: &str) -> PyResult<bool> {
+    let needs_snapshot = assets::QUANTIZED_MODEL_ASSETS
+        .iter()
+        .any(|asset| asset.id == model_id);
+    Ok(needs_snapshot)
+}
+
 #[pyfunction]
 #[pyo3(signature = (model_id, cache_dir=None))]
 fn download_model(model_id: &str, cache_dir: Option<&str>) -> PyResult<DownloadResultHandle> {
@@ -468,6 +500,8 @@ fn _native(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<DecodeOutcomeHandle>()?;
     module.add_class::<DownloadResultHandle>()?;
     module.add_function(wrap_pyfunction!(create_engine, module)?)?;
+    module.add_function(wrap_pyfunction!(engine_for_model, module)?)?;
+    module.add_function(wrap_pyfunction!(model_requires_snapshot, module)?)?;
     module.add_function(wrap_pyfunction!(download_model, module)?)?;
     module.add_function(wrap_pyfunction!(normalize_text, module)?)?;
     module.add_function(wrap_pyfunction!(render_prompt, module)?)?;
@@ -570,7 +604,7 @@ struct DownloadResult {
     preprocessor_path: Option<PathBuf>,
 }
 
-#[pyclass(module = "deepseek_ocr._native")]
+#[pyclass(module = "deepseek_ocr_rs._native")]
 pub struct DownloadResultHandle {
     #[pyo3(get)]
     pub model_id: String,
@@ -654,7 +688,7 @@ fn materialize_model_assets(
     let weights_path =
         assets::ensure_model_weights_for(model_id, &baseline_dir.join(weights_name))?;
 
-    let preprocessor_path = if let Some(name) = preprocessor {
+    let preprocessor_path = if let Some(_name) = preprocessor {
         assets::ensure_model_preprocessor_for(model_id, &config_path)?
     } else {
         None

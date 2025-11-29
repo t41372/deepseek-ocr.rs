@@ -21,7 +21,7 @@ Documentation = "https://github.com/TimmyOVO/deepseek-ocr.rs/tree/master/binding
 [tool.maturin]
 features = ["pyo3/extension-module"]
 manifest-path = "Cargo.toml"
-module-name = "deepseek_ocr._native"
+module-name = "deepseek_ocr_rs._native"
 python-source = "src"
 
 [dependency-groups]

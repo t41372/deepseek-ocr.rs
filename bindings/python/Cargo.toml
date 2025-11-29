@@ -30,4 +30,4 @@ tracing = { workspace = true }
 ahash = "0.8"
 
 [package.metadata.maturin]
-name = "deepseek_ocr._native"
+name = "deepseek_ocr_rs._native"
