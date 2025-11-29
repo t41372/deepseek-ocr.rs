@@ -121,7 +121,7 @@ def test_real_model_roundtrip() -> None:
         dtype = cast(Literal["f32", "f16", "bf16"], dtype_str)
 
     engine = OcrEngine.from_files(
-        model=_engine_label(model_id),
+        engine=_engine_label(model_id),
         config_path=config,
         tokenizer_path=tokenizer,
         weights_path=weights,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import warnings
 
 import pytest
 from pathlib import Path
@@ -98,3 +99,50 @@ def test_engine_from_model_id_with_env_override(monkeypatch: pytest.MonkeyPatch)
     # Invalid engine value should be ignored
     monkeypatch.setenv("DEEPSEEK_OCR_ENGINE_BAD", "invalid")
     assert _engine_from_model_id("bad") == "deepseek"  # Falls back to default
+
+
+def test_error_message_for_missing_model_id() -> None:
+    """Verify helpful error message when model_id is missing with auto_download."""
+    with pytest.raises(ValueError) as exc_info:
+        OcrEngine.from_files(auto_download=True)
+
+    assert "model_id is required when auto_download=True" in str(exc_info.value)
+    assert "Hint" in str(exc_info.value)
+    assert "from_pretrained" in str(exc_info.value)
+
+
+def test_error_message_for_missing_paths() -> None:
+    """Verify helpful error message when paths are missing without auto_download."""
+    with pytest.raises(ValueError) as exc_info:
+        OcrEngine.from_files(engine="deepseek", auto_download=False)
+
+    assert "config_path and tokenizer_path are required" in str(exc_info.value)
+    assert "Hint" in str(exc_info.value)
+    assert "from_pretrained" in str(exc_info.value)
+
+
+def test_device_dtype_compatibility_warnings() -> None:
+    """Test that incompatible device/dtype combinations emit warnings."""
+    from deepseek_ocr._api import _validate_device_dtype
+
+    # CPU + f16 should warn
+    with pytest.warns(UserWarning, match=r"f16 dtype on CPU.*poor performance"):
+        _validate_device_dtype("cpu", "f16")
+
+    # CPU + bf16 should warn
+    with pytest.warns(UserWarning, match=r"bf16 dtype on CPU.*poor performance"):
+        _validate_device_dtype("cpu", "bf16")
+
+    # Metal + bf16 should warn
+    with pytest.warns(UserWarning, match=r"Metal device works best with f16 or f32"):
+        _validate_device_dtype("metal", "bf16")
+
+    # CPU + f32 should not warn (optimal)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _validate_device_dtype("cpu", "f32")
+
+    # Metal + f16 should not warn (optimal)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _validate_device_dtype("metal", "f16")

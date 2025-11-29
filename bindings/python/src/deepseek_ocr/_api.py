@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Literal
 import os
 import platform
+import warnings
 
 from PIL import Image
 
@@ -98,8 +99,6 @@ class OcrEngine:
         template: str = "plain",
         system_prompt: str = "",
         cache_dir: str | Path | None = None,
-        # Backward compatibility
-        model: ModelKind | None = None,
     ) -> "OcrEngine":
         """Build an engine and download missing assets automatically.
 
@@ -110,15 +109,15 @@ class OcrEngine:
             template: Prompt template name.
             system_prompt: System prompt to use.
             cache_dir: Custom cache directory.
-            model: [Deprecated] Explicitly set the engine kind. If None, inferred from model_id.
         """
         if device is None:
             device = _resolve_device()
 
-        # If the user passed the old `model` arg but no `model_id` (or default),
-        # we try to respect it, but `model_id` is the primary source of truth now.
-        # Ideally, we infer engine from model_id.
-        engine = model if model is not None else _engine_from_model_id(model_id)
+        # Validate device/dtype compatibility
+        _validate_device_dtype(device, dtype)
+
+        # Infer engine type from model_id
+        engine = _engine_from_model_id(model_id)
 
         return cls.from_files(
             model_id=model_id,
@@ -147,16 +146,15 @@ class OcrEngine:
         system_prompt: str = "",
         auto_download: bool = False,
         cache_dir: str | Path | None = None,
-        # Backward compatibility alias
-        model: ModelKind | None = None,
     ) -> "OcrEngine":
         """Build an engine from local files or auto-downloaded assets."""
-        if model is not None:
-            engine = model
-
         if auto_download:
             if model_id is None:
-                raise ValueError("model_id is required when auto_download=True")
+                raise ValueError(
+                    "model_id is required when auto_download=True.\n"
+                    "Hint: Use OcrEngine.from_pretrained(model_id='deepseek-ocr') "
+                    "for automatic downloads, or provide explicit paths with from_files()."
+                )
 
             config_path, tokenizer_path, weights_path, snapshot_path = _ensure_assets(
                 model_id=model_id,
@@ -170,8 +168,11 @@ class OcrEngine:
             # Validate paths if not auto-downloading and not a mock
             if engine != "mock" and (config_path is None or tokenizer_path is None):
                 raise ValueError(
-                    "config_path and tokenizer_path are required when auto_download=False "
-                    "for real models; see README 'Get model assets' for expected filenames."
+                    f"config_path and tokenizer_path are required for engine '{engine}' "
+                    f"when auto_download=False.\n"
+                    f"Hint: Use OcrEngine.from_pretrained(model_id='{model_id or 'deepseek-ocr'}') "
+                    f"to download assets automatically, or provide explicit paths.\n"
+                    f"See docs/python-binding.md for details on model asset locations."
                 )
 
         handle = _native.create_engine(
@@ -201,9 +202,26 @@ class OcrEngine:
         )
         image_slots = rendered_prompt.count("<image>")
         if image_slots != len(images):
+            if image_slots == 0:
+                hint = (
+                    "\nHint: Your prompt must contain at least one '<image>' token. "
+                    "Example: '<image> Extract all text from this image'"
+                )
+            elif len(images) == 0:
+                hint = (
+                    f"\nHint: Your prompt has {image_slots} <image> token(s) "
+                    f"but you provided no images. Pass images=[...] to generate()."
+                )
+            else:
+                hint = (
+                    f"\nHint: {'Add' if image_slots > len(images) else 'Remove'} "
+                    f"{abs(image_slots - len(images))} <image> token(s) "
+                    f"{'to' if image_slots > len(images) else 'from'} your prompt "
+                    f"to match the {len(images)} image(s) provided."
+                )
             raise ValueError(
-                f"prompt contains {image_slots} <image> tokens "
-                f"but {len(images)} images were provided"
+                f"Image count mismatch: prompt contains {image_slots} <image> token(s) "
+                f"but {len(images)} image(s) were provided.{hint}"
             )
         payloads = [_normalise_image(image) for image in images]
         vision_settings = (vision or VisionConfig()).to_native()
@@ -228,8 +246,33 @@ def _normalise_image(image: ImageInput) -> bytes:
         return bytes(image)
     if isinstance(image, Image.Image):
         return _buffer_ppm(image)
+
+    # Handle path-like inputs
     path = Path(image)
-    data = path.expanduser().read_bytes()
+    expanded_path = path.expanduser()
+
+    if not expanded_path.exists():
+        raise FileNotFoundError(
+            f"Image file not found: {expanded_path}\n"
+            f"Hint: Check that the path is correct and the file exists. "
+            f"You can also pass PIL.Image objects or raw bytes instead of paths."
+        )
+
+    if not expanded_path.is_file():
+        raise ValueError(
+            f"Path is not a file: {expanded_path}\n"
+            f"Hint: Provide a path to an image file (e.g., .jpg, .png, .webp), "
+            f"not a directory."
+        )
+
+    try:
+        data = expanded_path.read_bytes()
+    except PermissionError as e:
+        raise PermissionError(
+            f"Permission denied reading image: {expanded_path}\n"
+            f"Hint: Check file permissions or try loading with PIL.Image.open() first."
+        ) from e
+
     return data
 
 
@@ -335,6 +378,30 @@ def _engine_from_model_id(model_id: str) -> ModelKind:
 
     # Default to deepseek for unknown models (most compatible fallback)
     return "deepseek"
+
+
+def _validate_device_dtype(device: DeviceLiteral, dtype: DTypeLiteral | None) -> None:
+    """Validate device/dtype compatibility and emit warnings for suboptimal configs."""
+    if device == "cpu" and dtype == "f16":
+        warnings.warn(
+            "f16 dtype on CPU may have poor performance or compatibility issues. "
+            "Consider using f32 for CPU, or switch to metal/cuda for f16 acceleration.",
+            UserWarning,
+            stacklevel=3,
+        )
+    elif device == "cpu" and dtype == "bf16":
+        warnings.warn(
+            "bf16 dtype on CPU may have poor performance or compatibility issues. "
+            "Consider using f32 for CPU, or switch to metal/cuda for bf16 support.",
+            UserWarning,
+            stacklevel=3,
+        )
+    elif device == "metal" and dtype not in (None, "f16", "f32"):
+        warnings.warn(
+            f"Metal device works best with f16 or f32. {dtype} may not be supported.",
+            UserWarning,
+            stacklevel=3,
+        )
 
 
 def _resolve_device(

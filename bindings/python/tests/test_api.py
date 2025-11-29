@@ -18,7 +18,7 @@ def _sample_image() -> Image.Image:
 
 
 def test_mock_engine_roundtrip() -> None:
-    engine = OcrEngine.from_files(model="mock")
+    engine = OcrEngine.from_files(engine="mock")
     prompt = "<image> Describe the receipt."
     result = engine.generate(prompt=prompt, images=[_sample_image()])
     assert "mock-response" in result.text
@@ -26,13 +26,40 @@ def test_mock_engine_roundtrip() -> None:
 
 
 def test_prompt_image_count_validation() -> None:
-    engine = OcrEngine.from_files(model="mock")
-    with pytest.raises(ValueError):
+    engine = OcrEngine.from_files(engine="mock")
+    with pytest.raises(ValueError, match=r"Image count mismatch"):
         engine.generate(prompt="<image> <image> ...", images=[_sample_image()])
 
 
+def test_prompt_image_count_helpful_messages() -> None:
+    """Verify helpful error messages for various image count mismatches."""
+    engine = OcrEngine.from_files(engine="mock")
+
+    # No <image> token in prompt
+    with pytest.raises(
+        ValueError, match=r"must contain at least one '<image>' token.*Example"
+    ):
+        engine.generate(prompt="Extract text", images=[_sample_image()])
+
+    # <image> token but no images provided
+    with pytest.raises(
+        ValueError, match=r"you provided no images.*Pass images=\[\.\.\.\]"
+    ):
+        engine.generate(prompt="<image> Extract", images=[])
+
+    # Too many <image> tokens
+    with pytest.raises(ValueError, match=r"Add.*<image> token.*to match"):
+        engine.generate(prompt="<image> <image> <image>", images=[_sample_image()])
+
+    # Too many images provided
+    with pytest.raises(ValueError, match=r"Remove.*<image> token.*from.*to match"):
+        engine.generate(
+            prompt="<image>", images=[_sample_image(), _sample_image(), _sample_image()]
+        )
+
+
 def test_generation_config_maps_to_native() -> None:
-    engine = OcrEngine.from_files(model="mock")
+    engine = OcrEngine.from_files(engine="mock")
     generation = GenerationConfig(max_new_tokens=8, do_sample=True, temperature=0.7)
     vision = VisionConfig(base_size=768, image_size=512, crop_mode=True)
     result = engine.generate(
@@ -45,7 +72,7 @@ def test_generation_config_maps_to_native() -> None:
 
 
 def test_streaming_callback_receives_tokens() -> None:
-    engine = OcrEngine.from_files(model="mock")
+    engine = OcrEngine.from_files(engine="mock")
     seen: list[int] = []
 
     def _cb(count: int, tokens: Sequence[int]) -> None:
@@ -64,7 +91,7 @@ def test_render_prompt_is_accessible() -> None:
 def test_pil_image_modes() -> None:
     """Ensure various PIL modes are converted to RGB correctly."""
 
-    engine = OcrEngine.from_files(model="mock")
+    engine = OcrEngine.from_files(engine="mock")
 
     for mode in ["RGB", "RGBA", "L"]:
         img = Image.new(mode, (16, 16), color=(100, 100, 100) if mode != "L" else 100)
@@ -76,7 +103,7 @@ def test_pil_image_modes() -> None:
 def test_path_like_support() -> None:
     """Path objects and ~ expansion should be accepted."""
 
-    engine = OcrEngine.from_files(model="mock")
+    engine = OcrEngine.from_files(engine="mock")
 
     with NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         img = Image.new("RGB", (8, 8))
@@ -93,10 +120,36 @@ def test_path_like_support() -> None:
         Path(tmp.name).unlink(missing_ok=True)
 
 
+def test_image_file_not_found_error() -> None:
+    """Verify helpful error message when image file doesn't exist."""
+    engine = OcrEngine.from_files(engine="mock")
+
+    with pytest.raises(FileNotFoundError) as exc_info:
+        engine.generate(
+            prompt="<image> test", images=["/nonexistent/path/to/image.jpg"]
+        )
+
+    assert "Image file not found" in str(exc_info.value)
+    assert "Hint" in str(exc_info.value)
+
+
+def test_image_path_is_directory_error(tmp_path: Path) -> None:
+    """Verify helpful error message when path points to directory."""
+    engine = OcrEngine.from_files(engine="mock")
+    directory = tmp_path / "some_dir"
+    directory.mkdir()
+
+    with pytest.raises(ValueError) as exc_info:
+        engine.generate(prompt="<image> test", images=[directory])
+
+    assert "Path is not a file" in str(exc_info.value)
+    assert "Hint" in str(exc_info.value)
+
+
 def test_bytes_and_bytearray_support() -> None:
     """Bytes-like inputs should pass through unchanged."""
 
-    engine = OcrEngine.from_files(model="mock")
+    engine = OcrEngine.from_files(engine="mock")
     img = Image.new("RGB", (8, 8))
 
     buf = BytesIO()
@@ -112,7 +165,7 @@ def test_bytes_and_bytearray_support() -> None:
 
 
 def test_multiple_images_roundtrip() -> None:
-    engine = OcrEngine.from_files(model="mock")
+    engine = OcrEngine.from_files(engine="mock")
     images = [_sample_image() for _ in range(3)]
 
     result = engine.generate(
@@ -125,7 +178,7 @@ def test_multiple_images_roundtrip() -> None:
 
 
 def test_concurrent_decode_safety() -> None:
-    engine = OcrEngine.from_files(model="mock")
+    engine = OcrEngine.from_files(engine="mock")
 
     def run_decode(i: int) -> str:
         return engine.generate(
@@ -140,7 +193,7 @@ def test_concurrent_decode_safety() -> None:
 
 
 def test_generation_and_vision_config_passthrough() -> None:
-    engine = OcrEngine.from_files(model="mock")
+    engine = OcrEngine.from_files(engine="mock")
 
     generation = GenerationConfig(
         max_new_tokens=100,
@@ -265,7 +318,7 @@ def test_from_files_auto_download_calls_ensure(
     monkeypatch.setattr("deepseek_ocr._api._ensure_assets", fake_ensure)
     monkeypatch.setattr("deepseek_ocr._native.create_engine", lambda **k: DummyHandle())
 
-    engine = OcrEngine.from_files(model="mock", model_id="mock-id", auto_download=True)
+    engine = OcrEngine.from_files(engine="mock", model_id="mock-id", auto_download=True)
     assert isinstance(engine, OcrEngine)
 
 
@@ -284,7 +337,7 @@ def test_from_pretrained_downloads(
     )
     monkeypatch.setattr("deepseek_ocr._native.create_engine", lambda **k: object())
 
-    OcrEngine.from_pretrained(model="deepseek")
+    OcrEngine.from_pretrained(model_id="deepseek-ocr")
 
 
 def test_download_cli_prints_paths(
