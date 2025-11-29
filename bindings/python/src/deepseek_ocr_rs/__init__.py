@@ -25,10 +25,10 @@ Quick Start:
     >>> print(result.text)
 
 Supported Models:
-    - deepseek-ocr: Full-precision DeepSeek-OCR (~6.3GB, highest accuracy)
-    - paddleocr-vl: Lighter PaddleOCR-VL model (~4.7GB, faster)
-    - dots-ocr: DotsOCR for high-resolution documents (~9GB)
-    - Quantized variants: *-q4k, *-q6k, *-q8k for reduced memory
+    - deepseek-ocr: Full-precision DeepSeek-OCR (~6.3GB weights, ~13GB RAM runtime, highest accuracy)
+    - paddleocr-vl: Lighter PaddleOCR-VL model (~4.7GB weights, ~9GB RAM runtime, faster)
+    - dots-ocr: DotsOCR for high-resolution documents (~9GB weights, ~30-50GB RAM runtime)
+    - Quantized variants: *-q4k, *-q6k, *-q8k for reduced memory footprint
 
 Main Classes and Functions:
     OcrEngine: Main inference engine
