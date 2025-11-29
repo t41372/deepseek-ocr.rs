@@ -19,6 +19,8 @@ deepseek-ocr-core = { path = "../../crates/core" }
 deepseek-ocr-infer-deepseek = { path = "../../crates/infer-deepseek" }
 deepseek-ocr-infer-dots = { path = "../../crates/infer-dots" }
 deepseek-ocr-infer-paddleocr = { path = "../../crates/infer-paddleocr" }
+deepseek-ocr-assets = { path = "../../crates/assets" }
+deepseek-ocr-config = { path = "../../crates/config" }
 image = { workspace = true, features = ["pnm"] }
 once_cell = "1.19"
 candle-core = { workspace = true }

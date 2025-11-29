@@ -1,22 +1,152 @@
-# Pull request summary – Python binding
+# DeepSeek OCR Python binding guide
 
-## Highlights
+Everything you need to load models, stream tokens, and keep the Python layer in
+sync with the Rust engines.
 
-- Added a PyO3 crate (`bindings/python`) that exports the `deepseek_ocr._native`
-  extension module under the `deepseek-ocr-rs` Python package. The binding wraps
-  the existing Rust `OcrEngine` trait and forwards all inference work to the
-  same implementations used by the CLI.
-- Introduced a modern Python package with strict typing, `.pyi` stubs, dev
-  tooling powered by Astral UV, and Pillow-powered image helpers for developers.
-- Documented usage (README), maintenance processes (DEVELOPING.md), and wired the
-  new flow into CI via a dedicated GitHub Actions workflow that builds the
-  extension and runs pytest + mypy in strict mode.
-- Added regression tests with a mock engine so Python contributors can run the
-  suite locally without downloading multi-gigabyte weights.
-- Updated the top-level README with the new binding details and how to build it.
+## Setup recap
 
-## Tests
+```bash
+uv sync --dev
+# Mock engine (fast, no weights)
+uv run maturin develop --locked --features mock-engine
+# Real engines (provide weights)
+uv run maturin develop --locked --no-default-features
+# Download assets (same cache as Rust CLI/server)
+uv run python -m deepseek_ocr.download --model deepseek-ocr
+```
 
-- `uv run maturin develop --locked --features mock-engine`
-- `uv run pytest`
-- `uv run mypy src tests`
+Artifacts required by each model:
+
+| Model ID        | Files (inside the model cache directory)                          |
+| --------------- | ----------------------------------------------------------------- |
+| deepseek-ocr    | `config.json`, `tokenizer.json`, `model-00001-of-000001.safetensors` |
+| paddleocr-vl    | `config.json`, `tokenizer.json`, `model.safetensors`             |
+| dots-ocr        | `config.json`, `tokenizer.json`, `model.safetensors.index.json` (+ shards), `preprocessor_config.json` |
+| quantized *     | Same config/tokenizer as the baseline + `<id>.dsq` snapshot       |
+
+Default cache roots after the CLI downloads:
+
+- Linux: `~/.cache/deepseek-ocr/models/<model-id>`
+- macOS: `~/Library/Caches/deepseek-ocr/models/<model-id>`
+- Windows: `%LOCALAPPDATA%\\deepseek-ocr\\models\\<model-id>`
+
+\* Quantized snapshots share the baseline directory.
+
+## API surface
+
+| Class / function | Purpose |
+| --- | --- |
+| `OcrEngine.from_files` | Build a thread-safe handle from explicit paths and device/dtype hints. |
+| `auto_download` flag | Optional lazy download of missing assets into the standard cache. |
+| `OcrEngine.from_pretrained` | Convenience wrapper that defaults to `auto_download=True` and infers engine from `model_id`. |
+| `get_default_cache_dir` | Helper to inspect the default cache location for a given model ID. |
+| `OcrEngine.generate` | Run inference with optional streaming, `GenerationConfig`, and `VisionConfig`. |
+| `GenerationConfig` | Mirrors `DecodeParameters` in Rust (sampling, penalties, cache use). |
+| `VisionConfig` | Mirrors `VisionSettings` (base size, crop mode, resize). |
+| `render_prompt` | Apply the template + system prompt just like the CLI/server. |
+| `normalize_text` | Strip trailing markers the engines emit. |
+| `download_model` / `python -m deepseek_ocr.download` | Fetch model assets and print resolved cache paths. |
+
+All heavy work happens in Rust; the GIL is released during decode.
+
+## Inputs and prompting
+
+- Acceptable images: `PIL.Image`, filesystem paths (strings or `Path`), and raw
+  `bytes`/`bytearray`. PIL inputs are converted to RGB PPM for fast, lossless
+  transfer into Rust.
+- The prompt must contain exactly one `<image>` token per image passed to
+  `generate`. A mismatch raises `ValueError` before any model work begins.
+- Templates are the same as the CLI (`plain` by default). Use `render_prompt`
+  if you need to preview the final text before calling `generate`.
+
+## Streaming and concurrency
+
+- Pass `stream=callable` to `generate` to receive incremental token IDs. Errors
+  inside the callback are printed but do not abort decoding.
+- `OcrEngine` can be shared across threads; the binding holds a mutex around the
+  engine state while keeping the GIL released so Python threads keep running.
+
+## Device and dtype rules
+
+- `device`: `cpu`, `metal` (macOS), `cuda` (CUDA 12.2+). The binding delegates
+  to the same `prepare_device_and_dtype` helper as the Rust runtime.
+- `dtype`: `f32`, `f16`, or `bf16`. When omitted we choose the default for the
+  device (f32 on CPU, f16 on Metal/CUDA where available).
+- Quantized snapshots still require a baseline `config.json` and `tokenizer.json`
+  plus the `.dsq` file; set `weights_path` to the snapshot and leave
+  `snapshot_path` unset.
+
+## Model quick picks
+
+- **deepseek-ocr** – highest accuracy; ~13 GB runtime; choose Metal/CUDA when possible.
+- **paddleocr-vl** – best on 16 GB systems; smaller 0.9B model; good general quality.
+- **dots-ocr** – excels at complex layouts; heavy (30–50 GB runtime); consider
+  quantized variants on RAM-limited hosts.
+
+## Testing matrix
+
+- Unit + type checks (mock engine):  
+  `uv run pytest --cov=deepseek_ocr --cov-report=term-missing && uv run mypy src tests`
+- End-to-end with real weights (opt-in):  
+  ```
+  uv run python -m deepseek_ocr.download --model deepseek-ocr
+  DEEPSEEK_OCR_E2E=1 DEEPSEEK_OCR_E2E_MODEL_HOME=$(uv run python -m deepseek_ocr.download --model deepseek-ocr --print-cache) uv run pytest -m e2e
+  ```
+
+## Forward compatibility with new Rust models
+
+When the Rust version adds a new model (e.g., `foo-ocr`) that the Python binding hasn't been updated for yet, users have two options:
+
+### Option 1: Environment variable override (Recommended)
+
+Set an environment variable to specify which engine type to use:
+
+```bash
+export DEEPSEEK_OCR_ENGINE_FOO_OCR=deepseek  # or paddle/dots
+python your_script.py
+```
+
+The binding will automatically use the specified engine for `foo-ocr`.
+
+### Option 2: Explicit `engine` parameter
+
+Manually download the model and use `from_files()` with an explicit engine:
+
+```python
+from deepseek_ocr import OcrEngine
+
+# Download manually using Rust CLI or download helper
+engine = OcrEngine.from_files(
+    model_id="foo-ocr",
+    engine="deepseek",  # Specify compatible engine type
+    config_path="/path/to/config.json",
+    tokenizer_path="/path/to/tokenizer.json",
+    weights_path="/path/to/weights.safetensors",
+    device="cpu",
+)
+```
+
+### Default behavior
+
+If no override is specified, the binding will:
+1. Check for `paddle` or `dots` in the model ID (case-insensitive)
+2. Fall back to `deepseek` engine (most compatible)
+
+This ensures new Rust models work immediately, even before Python binding updates.
+
+## Maintenance checklist
+
+When inference parameters or model options change upstream:
+
+1. Add fields to the PyO3 structs in `src/lib.rs`.
+2. Mirror them in `GenerationConfig` / `VisionConfig` in `_api.py`.
+3. Update the `.pyi` stubs and the user-facing docs (README + cookbook).
+4. Extend tests to cover the new knobs (use the mock engine where possible).
+
+When new model types are added to Rust:
+
+1. Update `ModelKind` literal in `_api.py` (line ~17).
+2. Update `EngineKind` enum and `parse()` in `src/lib.rs` (lines ~367-390).
+3. Add loader function call in `model_from_args()` (lines ~325-333).
+4. Document the new model in README.md and this guide.
+5. Add test cases for model ID inference.

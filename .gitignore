@@ -13,3 +13,5 @@ bindings/python/.venv
 .hf-cache
 *.bin
 *.dsq
+*.so
+.coverage

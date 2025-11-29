@@ -35,6 +35,16 @@ class DecodeOutcomeHandle:
     response_tokens: int
     generated_tokens: list[int]
 
+class DownloadResultHandle:
+    model_id: str
+    model_dir: str
+    baseline_dir: str
+    config_path: str
+    tokenizer_path: str
+    weights_path: str
+    snapshot_path: str | None
+    preprocessor_path: str | None
+
 class EngineHandle:
     def decode(
         self,
@@ -57,5 +67,8 @@ def create_engine(
     device: str | None = ...,
     dtype: str | None = ...,
 ) -> EngineHandle: ...
+def download_model(
+    model_id: str, cache_dir: str | None = ...
+) -> DownloadResultHandle: ...
 def render_prompt(template: str, system_prompt: str, raw_prompt: str) -> str: ...
 def normalize_text(text: str) -> str: ...

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import concurrent.futures
+from collections.abc import Sequence
 from io import BytesIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from collections.abc import Sequence
+from typing import Any
 
 import pytest
 from PIL import Image
@@ -104,7 +105,9 @@ def test_bytes_and_bytearray_support() -> None:
     result = engine.generate(prompt="<image> bytes", images=[buf.getvalue()])
     assert "mock-response" in result.text
 
-    result = engine.generate(prompt="<image> bytearray", images=[bytearray(buf.getvalue())])
+    result = engine.generate(
+        prompt="<image> bytearray", images=[bytearray(buf.getvalue())]
+    )
     assert "mock-response" in result.text
 
 
@@ -125,7 +128,9 @@ def test_concurrent_decode_safety() -> None:
     engine = OcrEngine.from_files(model="mock")
 
     def run_decode(i: int) -> str:
-        return engine.generate(prompt=f"<image> Test {i}", images=[_sample_image()]).text
+        return engine.generate(
+            prompt=f"<image> Test {i}", images=[_sample_image()]
+        ).text
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         results = list(pool.map(run_decode, range(10)))
@@ -159,3 +164,230 @@ def test_generation_and_vision_config_passthrough() -> None:
     assert "max_tokens=100" in result.text
     assert "base=768" in result.text
     assert "size=512" in result.text
+
+
+def test_coerce_optional_path_handles_home_expansion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from deepseek_ocr import _api
+
+    sample = tmp_path / "artifact.bin"
+    sample.write_bytes(b"ok")
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    expanded = _api._coerce_optional_path(f"~/{sample.name}")
+    assert expanded == str(sample)
+    assert _api._coerce_optional_path(None) is None
+
+
+def test_auto_download_invokes_helper(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Ensure auto_download wires through when files are missing."""
+
+    from deepseek_ocr import _api
+
+    calls: list[str] = []
+
+    class DummyResult:
+        config_path = str(tmp_path / "config.json")
+        tokenizer_path = str(tmp_path / "tokenizer.json")
+        weights_path = str(tmp_path / "weights.bin")
+        snapshot_path = str(tmp_path / "snapshot.dsq")
+
+    def fake_download(model: str, cache_dir: Any = None) -> type[DummyResult]:
+        calls.append(model)
+        # Touch files so downstream existence checks would pass if added later.
+        Path(DummyResult.config_path).write_text("{}")
+        Path(DummyResult.tokenizer_path).write_text("{}")
+        Path(DummyResult.weights_path).write_text("{}")
+        Path(DummyResult.snapshot_path).write_text("dsq")
+        return DummyResult
+
+    missing = tmp_path / "missing.json"
+    monkeypatch.setattr("deepseek_ocr._api.download_model", fake_download)
+
+    result = _api._ensure_assets(
+        model_id="deepseek",
+        config_path=missing,
+        tokenizer_path=None,
+        weights_path=None,
+        snapshot_path=None,
+        cache_dir=None,
+    )
+
+    assert calls == ["deepseek"]
+    assert result[0] == DummyResult.config_path
+    assert result[3] == DummyResult.snapshot_path
+
+
+def test_auto_download_skips_when_present(tmp_path: Path) -> None:
+    """If all paths exist, download helper should not be called."""
+
+    from deepseek_ocr import _api
+
+    cfg = tmp_path / "c.json"
+    tok = tmp_path / "t.json"
+    w = tmp_path / "w.bin"
+    for path in (cfg, tok, w):
+        path.write_text("{}")
+
+    result = _api._ensure_assets(
+        model_id="deepseek",
+        config_path=cfg,
+        tokenizer_path=tok,
+        weights_path=w,
+        snapshot_path=None,
+        cache_dir=None,
+    )
+
+    assert result[0] == cfg
+    assert result[1] == tok
+    assert result[2] == w
+
+
+def test_from_files_auto_download_calls_ensure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """from_files should call _ensure_assets when auto_download=True."""
+
+    cfg = tmp_path / "c.json"
+    tok = tmp_path / "t.json"
+    w = tmp_path / "w.bin"
+
+    def fake_ensure(**kwargs: Any) -> tuple[str, str, str, None]:
+        return str(cfg), str(tok), str(w), None
+
+    class DummyHandle:
+        def decode(self, *a: Any, **k: Any) -> None:  # pragma: no cover - not used here
+            raise RuntimeError("should not decode in this test")
+
+    monkeypatch.setattr("deepseek_ocr._api._ensure_assets", fake_ensure)
+    monkeypatch.setattr("deepseek_ocr._native.create_engine", lambda **k: DummyHandle())
+
+    engine = OcrEngine.from_files(model="mock", model_id="mock-id", auto_download=True)
+    assert isinstance(engine, OcrEngine)
+
+
+def test_from_pretrained_downloads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """from_pretrained should invoke auto_download by default."""
+
+    cfg = tmp_path / "c.json"
+    tok = tmp_path / "t.json"
+    w = tmp_path / "w.bin"
+
+    monkeypatch.setattr(
+        "deepseek_ocr._api._ensure_assets",
+        lambda **kwargs: (str(cfg), str(tok), str(w), None),
+    )
+    monkeypatch.setattr("deepseek_ocr._native.create_engine", lambda **k: object())
+
+    OcrEngine.from_pretrained(model="deepseek")
+
+
+def test_download_cli_prints_paths(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """Smoke test the python -m deepseek_ocr.download CLI wrapper."""
+
+    class Dummy:
+        model_id = "deepseek-ocr"
+        model_dir = str(tmp_path / "models" / "deepseek-ocr")
+        baseline_dir = model_dir
+        config_path = str(tmp_path / "config.json")
+        tokenizer_path = str(tmp_path / "tokenizer.json")
+        weights_path = str(tmp_path / "weights.safetensors")
+        snapshot_path = str(tmp_path / "snap.dsq")
+        preprocessor_path = str(tmp_path / "pre.json")
+
+    monkeypatch.setattr("deepseek_ocr.download.download_model", lambda *a, **k: Dummy)
+
+    from deepseek_ocr import download as dl
+
+    dl.main(["--model", "deepseek-ocr", "--print-cache"])
+    out = capsys.readouterr().out
+    assert Dummy.model_dir in out
+
+
+def test_download_cli_full(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """Exercise the non --print-cache code path."""
+
+    class Dummy:
+        model_id = "deepseek-ocr"
+        model_dir = str(tmp_path / "models" / "deepseek-ocr")
+        baseline_dir = model_dir
+        config_path = str(tmp_path / "config.json")
+        tokenizer_path = str(tmp_path / "tokenizer.json")
+        weights_path = str(tmp_path / "weights.safetensors")
+        snapshot_path = str(tmp_path / "snap.dsq")
+        preprocessor_path = str(tmp_path / "pre.json")
+
+    monkeypatch.setattr("deepseek_ocr.download.download_model", lambda *a, **k: Dummy)
+
+    from deepseek_ocr import download as dl
+
+    dl.main(["--model", "deepseek-ocr"])
+    out = capsys.readouterr().out
+    assert "config:" in out and Dummy.config_path in out
+    assert "snapshot:" in out and Dummy.snapshot_path in out
+    assert "preprocessor:" in out and Dummy.preprocessor_path in out
+
+
+def test_download_model_wrapper(monkeypatch: pytest.MonkeyPatch) -> None:
+    """download_model should delegate to the native layer."""
+
+    class Dummy:
+        pass
+
+    called: dict[str, Any] = {}
+
+    def fake_native(model_id: str, cache_dir: Any = None) -> Dummy:
+        called["model_id"] = model_id
+        called["cache_dir"] = cache_dir
+        return Dummy()
+
+    import deepseek_ocr._native as native
+
+    monkeypatch.setattr(native, "download_model", fake_native, raising=False)
+    from deepseek_ocr._api import download_model
+
+    result = download_model("deepseek-ocr", cache_dir="/tmp/cache")
+    assert isinstance(result, Dummy)
+    assert called == {"model_id": "deepseek-ocr", "cache_dir": "/tmp/cache"}
+
+
+def test_ensure_assets_marks_snapshot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Quantized model should request snapshot when missing."""
+
+    from deepseek_ocr import _api
+
+    monkeypatch.setattr(
+        "deepseek_ocr._api.download_model",
+        lambda *a, **k: type(
+            "R",
+            (),
+            {
+                "config_path": "c",
+                "tokenizer_path": "t",
+                "weights_path": "w",
+                "snapshot_path": "s",
+            },
+        ),
+    )
+
+    result = _api._ensure_assets(
+        model_id="deepseek-ocr-q4k",
+        config_path=None,
+        tokenizer_path=None,
+        weights_path=None,
+        snapshot_path=None,
+        cache_dir=None,
+    )
+
+    assert result[3] == "s"

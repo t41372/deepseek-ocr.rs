@@ -39,12 +39,20 @@ surface the changes immediately.
 * Update the tests to cover the new engine-specific behaviour using the
   `mock-engine` feature if the real weights are too large to ship.
 
+## Testing expectations
+
+* Keep `deepseek_ocr` at 100% coverage (run `uv run pytest --cov=deepseek_ocr`).
+* End-to-end runs with real weights are opt-in: set `DEEPSEEK_OCR_E2E=1` and
+  `DEEPSEEK_OCR_E2E_MODEL_HOME=/path/to/cache` before running
+  `uv run pytest -m e2e`. These tests intentionally stay out of CI.
+* Model assets can be pulled via `uv run python -m deepseek_ocr.download --model <id>`.
+  The same function backs the `auto_download=True` flag in `OcrEngine.from_files`.
+
 ## When the tokenizer format changes
 
 The binding expects a HuggingFace tokenizer JSON file, matching the CLI.  If the
 format or location changes, make sure the Python `OcrEngine.from_files`
-parameters and error messages mirror whatever the Rust CLI requires.  The
-`DEEPSEEK_TOKENIZER` helper in `_api.py` centralises path handling.
+parameters and error messages mirror whatever the Rust CLI requires.
 
 ## Publishing
 

@@ -10,6 +10,8 @@ use deepseek_ocr_core::{
     normalize_text as normalize_text_impl, render_prompt as render_prompt_impl, DecodeOutcome,
     DecodeParameters, ModelKind, ModelLoadArgs, OcrEngine, VisionSettings,
 };
+use deepseek_ocr_assets as assets;
+use deepseek_ocr_config::fs::{LocalFileSystem, VirtualPath};
 use deepseek_ocr_infer_deepseek::load_model as load_deepseek_model;
 use deepseek_ocr_infer_dots::load_model as load_dots_model;
 use deepseek_ocr_infer_paddleocr::load_model as load_paddle_model;
@@ -438,6 +440,14 @@ fn create_engine(
 }
 
 #[pyfunction]
+#[pyo3(signature = (model_id, cache_dir=None))]
+fn download_model(model_id: &str, cache_dir: Option<&str>) -> PyResult<DownloadResultHandle> {
+    let cache_override = cache_dir.map(PathBuf::from);
+    let paths = materialize_model_assets(model_id, cache_override).map_err(to_pyerr)?;
+    Ok(DownloadResultHandle::from(paths))
+}
+
+#[pyfunction]
 fn normalize_text(text: &str) -> String {
     normalize_text_impl(text)
 }
@@ -453,7 +463,9 @@ fn _native(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<VisionSettingsInput>()?;
     module.add_class::<DecodeParametersInput>()?;
     module.add_class::<DecodeOutcomeHandle>()?;
+    module.add_class::<DownloadResultHandle>()?;
     module.add_function(wrap_pyfunction!(create_engine, module)?)?;
+    module.add_function(wrap_pyfunction!(download_model, module)?)?;
     module.add_function(wrap_pyfunction!(normalize_text, module)?)?;
     module.add_function(wrap_pyfunction!(render_prompt, module)?)?;
     #[cfg(feature = "mock-engine")]
@@ -542,3 +554,144 @@ mod mock {
 
 #[cfg(feature = "mock-engine")]
 use mock::{build_mock_tokenizer, MockEngine};
+
+#[derive(Debug, Clone)]
+struct DownloadResult {
+    model_id: String,
+    model_dir: PathBuf,
+    baseline_dir: PathBuf,
+    config_path: PathBuf,
+    tokenizer_path: PathBuf,
+    weights_path: PathBuf,
+    snapshot_path: Option<PathBuf>,
+    preprocessor_path: Option<PathBuf>,
+}
+
+#[pyclass(module = "deepseek_ocr._native")]
+pub struct DownloadResultHandle {
+    #[pyo3(get)]
+    pub model_id: String,
+    #[pyo3(get)]
+    pub model_dir: String,
+    #[pyo3(get)]
+    pub baseline_dir: String,
+    #[pyo3(get)]
+    pub config_path: String,
+    #[pyo3(get)]
+    pub tokenizer_path: String,
+    #[pyo3(get)]
+    pub weights_path: String,
+    #[pyo3(get)]
+    pub snapshot_path: Option<String>,
+    #[pyo3(get)]
+    pub preprocessor_path: Option<String>,
+}
+
+impl From<DownloadResult> for DownloadResultHandle {
+    fn from(value: DownloadResult) -> Self {
+        Self {
+            model_id: value.model_id,
+            model_dir: value.model_dir.display().to_string(),
+            baseline_dir: value.baseline_dir.display().to_string(),
+            config_path: value.config_path.display().to_string(),
+            tokenizer_path: value.tokenizer_path.display().to_string(),
+            weights_path: value.weights_path.display().to_string(),
+            snapshot_path: value
+                .snapshot_path
+                .map(|p| p.display().to_string()),
+            preprocessor_path: value
+                .preprocessor_path
+                .map(|p| p.display().to_string()),
+        }
+    }
+}
+
+fn default_model_dir(model_id: &str) -> Result<PathBuf> {
+    let fs = LocalFileSystem::new("deepseek-ocr");
+    let vpath = VirtualPath::model_dir(model_id.to_string());
+    fs.with_physical_path(&vpath, |p| Ok(p.to_path_buf()))
+}
+
+fn materialize_model_assets(
+    model_id: &str,
+    cache_override: Option<PathBuf>,
+) -> Result<DownloadResult> {
+    let baseline_id = assets::baseline_model_id(model_id);
+    let (config_name, tokenizer_name, weights_name, preprocessor, snapshot) =
+        match baseline_id.as_str() {
+            "deepseek-ocr" => (
+                "config.json",
+                "tokenizer.json",
+                "model-00001-of-000001.safetensors",
+                None,
+                snapshot_for(model_id),
+            ),
+            "paddleocr-vl" => ("config.json", "tokenizer.json", "model.safetensors", None, snapshot_for(model_id)),
+            "dots-ocr" => (
+                "config.json",
+                "tokenizer.json",
+                "model.safetensors.index.json",
+                Some("preprocessor_config.json"),
+                snapshot_for(model_id),
+            ),
+            other => {
+                return Err(anyhow::anyhow!("unknown model id `{}`", other));
+            }
+        };
+
+    let baseline_dir = cache_override
+        .clone()
+        .map(|root| root.join(&baseline_id))
+        .unwrap_or_else(|| default_model_dir(&baseline_id).unwrap_or_else(|_| PathBuf::from(".")));
+    std::fs::create_dir_all(&baseline_dir)?;
+
+    let config_path = assets::ensure_model_config_for(model_id, &baseline_dir.join(config_name))?;
+    let tokenizer_path =
+        assets::ensure_model_tokenizer_for(model_id, &baseline_dir.join(tokenizer_name))?;
+    let weights_path =
+        assets::ensure_model_weights_for(model_id, &baseline_dir.join(weights_name))?;
+
+    let preprocessor_path = if let Some(name) = preprocessor {
+        assets::ensure_model_preprocessor_for(model_id, &config_path)?
+    } else {
+        None
+    };
+
+    let (model_dir, snapshot_path) = if let Some((dtype, snap_name)) = snapshot {
+        let dir = cache_override
+            .clone()
+            .map(|root| root.join(model_id))
+            .unwrap_or_else(|| default_model_dir(model_id).unwrap_or_else(|_| PathBuf::from(".")));
+        std::fs::create_dir_all(&dir)?;
+        let snap_path = assets::ensure_model_snapshot_for(model_id, dtype, &dir.join(snap_name))?;
+        (dir, Some(snap_path))
+    } else {
+        (baseline_dir.clone(), None)
+    };
+
+    Ok(DownloadResult {
+        model_id: model_id.to_string(),
+        model_dir,
+        baseline_dir,
+        config_path,
+        tokenizer_path,
+        weights_path,
+        snapshot_path,
+        preprocessor_path,
+    })
+}
+
+fn snapshot_for(model_id: &str) -> Option<(&'static str, &'static str)> {
+    match model_id {
+        "deepseek-ocr-q4k" => Some(("Q4_K", "DeepSeek-OCR.Q4_K.dsq")),
+        "deepseek-ocr-q6k" => Some(("Q6_K", "DeepSeek-OCR.Q6_K.dsq")),
+        "deepseek-ocr-q8k" => Some(("Q8_0", "DeepSeek-OCR.Q8_0.dsq")),
+        "paddleocr-vl-q4k" => Some(("Q4_K", "PaddleOCR-VL.Q4_K.dsq")),
+        "paddleocr-vl-q6k" => Some(("Q6_K", "PaddleOCR-VL.Q6_K.dsq")),
+        "paddleocr-vl-q8k" => Some(("Q8_0", "PaddleOCR-VL.Q8_0.dsq")),
+        "dots-ocr-q4k" => Some(("Q4_K", "dots.ocr.Q4_K.dsq")),
+        "dots-ocr-q6k" => Some(("Q6_K", "dots.ocr.Q6_K.dsq")),
+        "dots-ocr-q8k" => Some(("Q8_0", "dots.ocr.Q8_0.dsq")),
+        _ => None,
+    }
+}
