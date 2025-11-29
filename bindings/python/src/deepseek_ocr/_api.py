@@ -12,6 +12,7 @@ import warnings
 
 from PIL import Image
 
+from io import BytesIO
 from . import _native
 
 ImageInput = str | Path | bytes | bytearray | Image.Image
@@ -284,11 +285,6 @@ def _buffer_ppm(image: Image.Image) -> bytes:
     Rust-side `image` crate (with the `pnm` feature). The trade-off is larger
     payload size, which is acceptable for in-process transfer.
     """
-    # Import locally to avoid top-level IO import if not needed,
-    # though for high-throughput this might be better at module level.
-    # Keeping as is for now, but could be optimized.
-    from io import BytesIO
-
     converted = image.convert("RGB")
 
     buf = BytesIO()
@@ -418,9 +414,12 @@ def get_default_cache_dir(model_id: str) -> Path:
     """Return the default model cache path for the current platform."""
     system = platform.system()
     if system == "Darwin":
-        root = "~/Library/Caches/deepseek-ocr/models"
+        base = Path.home() / "Library" / "Caches"
     elif system == "Windows":
-        root = "%LOCALAPPDATA%\\deepseek-ocr\\models"
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
     else:
-        root = "~/.cache/deepseek-ocr/models"
-    return Path(os.path.expandvars(root)).expanduser() / model_id
+        xdg = os.environ.get("XDG_CACHE_HOME")
+        base = Path(xdg) if xdg else Path.home() / ".cache"
+
+    return base / "deepseek-ocr" / "models" / model_id

@@ -876,6 +876,8 @@ dependencies = [
  "ahash",
  "anyhow",
  "candle-core",
+ "deepseek-ocr-assets",
+ "deepseek-ocr-config",
  "deepseek-ocr-core",
  "deepseek-ocr-infer-deepseek",
  "deepseek-ocr-infer-dots",

@@ -65,6 +65,9 @@ All heavy work happens in Rust; the GIL is released during decode.
   inside the callback are printed but do not abort decoding.
 - `OcrEngine` can be shared across threads; the binding holds a mutex around the
   engine state while keeping the GIL released so Python threads keep running.
+  Decode calls are serialized by that mutex (single-flight), so threads remain
+  responsive but inferences themselves do not run in parallel per engine
+  instance. Create multiple engines if you need concurrent decodes.
 
 ## Device and dtype rules
 
@@ -133,6 +136,27 @@ If no override is specified, the binding will:
 2. Fall back to `deepseek` engine (most compatible)
 
 This ensures new Rust models work immediately, even before Python binding updates.
+
+### Download helper scope
+
+The `download_model()` helper only knows about models registered in this binding
+(`deepseek-ocr`, `paddleocr-vl`, `dots-ocr`, and their quantized variants). If a
+new Rust release ships an additional model before the Python binding is updated:
+
+1. Download it with the Rust CLI (`deepseek-ocr download --model <id>`) or via
+   any other tool.
+2. Load it in Python with explicit paths:
+   ```python
+   from deepseek_ocr import OcrEngine
+   engine = OcrEngine.from_files(
+       engine="deepseek",  # or "paddle"/"dots" based on the model architecture
+       config_path="~/.cache/deepseek-ocr/models/<id>/config.json",
+       tokenizer_path="~/.cache/deepseek-ocr/models/<id>/tokenizer.json",
+       weights_path="~/.cache/deepseek-ocr/models/<id>/model.safetensors",
+   )
+   ```
+3. Optionally set `DEEPSEEK_OCR_ENGINE_<ID>=deepseek|paddle|dots` so
+   `from_pretrained()` works once the assets are present.
 
 ## Maintenance checklist
 

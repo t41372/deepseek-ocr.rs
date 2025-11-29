@@ -49,7 +49,7 @@ Set `HF_TOKEN` if you need access to private mirrors.
 from PIL import Image
 from deepseek_ocr import OcrEngine
 
-engine = OcrEngine.from_files(model="mock")
+engine = OcrEngine.from_files(engine="mock")
 result = engine.generate(prompt="<image> hi", images=[Image.new("RGB", (8, 8))])
 print(result.text)
 ```

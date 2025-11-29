@@ -1,3 +1,5 @@
+#![allow(unsafe_op_in_unsafe_fn)]
+
 use std::{
     io,
     path::PathBuf,
@@ -12,6 +14,7 @@ use deepseek_ocr_core::{
 };
 use deepseek_ocr_assets as assets;
 use deepseek_ocr_config::fs::{LocalFileSystem, VirtualPath};
+use deepseek_ocr_config::VirtualFileSystem;
 use deepseek_ocr_infer_deepseek::load_model as load_deepseek_model;
 use deepseek_ocr_infer_dots::load_model as load_dots_model;
 use deepseek_ocr_infer_paddleocr::load_model as load_paddle_model;
